@@ -7,58 +7,90 @@ from pybricks.parameters import Direction, Port, Stop
 from pybricks.tools import StopWatch, wait
 from pid import PID
 
-class PIDMotor(Motor):
-    def __init__(self, port, pid: PID):
-        super().__init__(port)
-        self.pid = pid
-
-    def set_speed(self, targetSpeed):
-        controlValue = self.pid.calculate(target=targetSpeed, current=self.speed())
-        self.dc(controlValue)  # Set motor duty cycle based on PID output
-
 class DifferentialDrive:
-    def __init__(self, x, y, theta, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
-        self.x = x  # Current x position in meters
-        self.y = y  # Current y position in meters
-        self.theta = theta  # Current heading in radians
-            
+    def __init__(self, x, y, theta, maxMotorSpeed=20, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
+        self.x = x # Current x position in meters
+        self.y = y # Current y position in meters
+        self.theta = theta # Current heading in radians
+        
+        self.maxMotorSpeed = maxMotorSpeed
+        
         self.wheelDiameter = wheelDiameter / 1000.0 # mm to meters
         self.axleTrack = axleTrack / 1000.0 # mm to meters
         self.leftMotorPort = leftMotorPort
         self.rightMotorPort = rightMotorPort
-                
+        
+        # Turn on spot feature
+        self.enableTurnOnSpot = True
+        self.isTurningOnSpot = False
+        self.turnOnSpotThreshold = math.radians(5)
+        self.stopTurnOnSpotThreshold = math.radians(1)
+        
+        # Robot physical parameters
+        self.mass = 0.592 # kg
         self.wheelCircumference = math.pi * self.wheelDiameter
-        self.prevLeftMotorRotation = 0.0
-        self.prevRightMotorRotation = 0.0
+        
+        # PID controller parameters
+        kp_position = 50.0
+        kd_position = 2 * math.sqrt(self.mass * kp_position)
+        self.positionPID = PID(
+            kP=kp_position, 
+            kI=0.0, 
+            kD=kd_position, 
+            outputRange=[-maxMotorSpeed, maxMotorSpeed]
+        )
+        
+        kp_heading = 100.0
+        ki_heading = 10.0
+        kd_heading = 2 * math.sqrt(self.mass * kp_heading)
+        self.headingPID = PID(
+            kP=kp_heading, 
+            kI=ki_heading, 
+            kD=kd_heading, 
+            accumLimit=10, 
+            accumUnder=math.radians(10), 
+            outputRange=[-maxMotorSpeed, maxMotorSpeed]
+        )
 
+        # Configuration
+        self.timer = StopWatch()
+        self.leftSpeed = 0.0
+        self.rightSpeed = 0.0
         self.configureSensors()
         self.configureMotors()
-        self.timer = StopWatch()
+        
+        # Start threads
         self.odometryThread = threading.Thread(target=self.odometryLoop)
-        # self.odometryThread.start()
-        self.odometryLoop() # Testing only odometry
+        self.odometryThread.start()
+        self.logger = threading.Thread(target=self.loggerLoop)
+        self.logger.start()
+    
+    def loggerLoop(self):
+        while True:
+            # Update pose
+            print("Position: (", self.x * 1000, ", ", self.y * 1000, "), Heading: ", math.degrees(self.theta), " degrees")
+            # Update commands
+            print("OnSpotTurn: ", self.isTurningOnSpot, "left: ", self.leftSpeed, "right: ", self.rightSpeed)
+            print()
     
     def odometryLoop(self):
-        prevTime = self.timer.time() - 0.000001
+        prevLeftMotorRotation = 0.0
+        prevRightMotorRotation = 0.0
         while True:
-            currentTime = self.timer.time()
             # Get the current motor rotations
-            leftMotorRotation = self.leftMotor.angle()  # in degrees
-            rightMotorRotation = self.rightMotor.angle()  # in degrees
+            leftMotorRotation = self.leftMotor.angle() # in degrees
+            rightMotorRotation = self.rightMotor.angle() # in degrees
             
             # Calculate the change in motor rotations since the last update
-            deltaLeftMotorRotation = leftMotorRotation - self.prevLeftMotorRotation
-            deltaRightMotorRotation = rightMotorRotation - self.prevRightMotorRotation
+            deltaLeftMotorRotation = leftMotorRotation - prevLeftMotorRotation
+            deltaRightMotorRotation = rightMotorRotation - prevRightMotorRotation
             
             # Update previous motor rotations for the next iteration
-            self.prevLeftMotorRotation = leftMotorRotation
-            self.prevRightMotorRotation = rightMotorRotation
+            prevLeftMotorRotation = leftMotorRotation
+            prevRightMotorRotation = rightMotorRotation
             
             # Update odometry based on motor rotations
             self.odometryUpdate(deltaLeftMotorRotation, deltaRightMotorRotation)
-            
-            # Update display
-            print("Position: (", self.x * 1000, ", ", self.y * 1000, "), Heading: ", math.degrees(self.theta), " degrees")
         
     def odometryUpdate(self, leftMotorRotation, rightMotorRotation):
         # Calculate the distance each wheel has traveled
@@ -81,43 +113,8 @@ class DifferentialDrive:
         pass
         
     def configureMotors(self):
-        # self.leftMotor = PIDMotor(self.leftMotorPort, pid=PID(kP=1.0, kI=0.0, kD=0.0, outputRange=[-100, 100]))
-        # self.rightMotor = PIDMotor(self.rightMotorPort, pid=PID(kP=1.0, kI=0.0, kD=0.0, outputRange=[-100, 100]))
-        self.leftMotor = Motor(self.leftMotorPort, positive_direction=Direction.CLOCKWISE)
+        self.leftMotor = Motor(self.leftMotorPort, positive_direction=Direction.CLOCKWISE) # only way to get forward to be positive
         self.rightMotor = Motor(self.rightMotorPort, positive_direction=Direction.CLOCKWISE)
-
-    def turnTo(self, targetHeading):
-        """
-        Turn the robot to a specific heading. no gyro
-        
-        :param targetHeading: Target heading in radians.
-        """
-        # 1. get total rotations for each motor to travel the arc distance calculated from theta and axle track
-        error = targetHeading - self.getHeading()
-        percentError = error / (2.0 * math.pi)  # Normalize error to a fraction of a full rotation
-        axleCircumference = 2.0 * math.pi * (self.axleTrack / 2.0)
-        arcDistanceMeters = percentError * axleCircumference
-        
-        # 2. convert to motor targets
-        leftMotorRadians = arcDistanceMeters / (self.wheelDiameter / 2.0)
-        rightMotorRadians = arcDistanceMeters / (self.wheelDiameter / 2.0)
-        
-        # 3. set motors to run to target positions
-        self.leftMotor.run_target(-100, math.degrees(leftMotorRadians), Stop.HOLD, wait=False)
-        self.rightMotor.run_target(100, math.degrees(rightMotorRadians), Stop.HOLD, wait=True)
-    
-    def driveStraight(self, distance):
-        """
-        Drive the robot straight for a specific distance. no gyro
-        
-        :param distance: Distance to drive in meters.
-        """
-        # 1. convert distance to motor rotations
-        wheelRotationsRadians = 2.0 * math.pi * (distance / self.wheelCircumference)
-        
-        # 2. set motors to run to target positions
-        self.leftMotor.run_target(100, -math.degrees(wheelRotationsRadians), Stop.HOLD, wait=False)
-        self.rightMotor.run_target(100, math.degrees(wheelRotationsRadians), Stop.HOLD, wait=True)
 
     def drive(self, distance, heading):
         """
@@ -126,25 +123,69 @@ class DifferentialDrive:
         :param distance: Distance to drive in meters.
         :param heading: Heading to maintain in radians.
         """
+        targetX = self.x + distance * math.cos(heading)
+        targetY = self.y + distance * math.sin(heading)
         
-        targetDistance = distance  # in meters
-        targetHeading = heading  # in radians
-        # while 
+        prevTime = -0.0001
+        while math.sqrt((targetX - self.x) ** 2 + (targetY - self.y) ** 2) > 0.01: # Continue until within 1 cm of target
+            currentTime = self.timer.time()
+            dt = currentTime - prevTime
+            prevTime = currentTime
+            
+            # Calculate the desired heading to the target position
+            desiredHeading = math.atan2(targetY - self.y, targetX - self.x)
+            headingError = desiredHeading - self.getHeading()
+            headingError = (headingError + math.pi) % (2 * math.pi) - math.pi # Normalize to [-pi, pi]
+            
+            # Use PID controllers for speed and heading
+            distanceError = math.sqrt((targetX - self.x) ** 2 + (targetY - self.y) ** 2) # in meters
+            distanceError *= 100 # Convert to cm
+            speed = self.positionPID.calculate(0, -distanceError, dt) # Negative because we want to reduce the error
+            turnSpeed = self.headingPID.calculate(0, -headingError, dt) # Negative because we want to reduce the error
+            
+            # Turn on spot feature
+            if self.enableTurnOnSpot and abs(headingError) > self.turnOnSpotThreshold:
+                self.isTurningOnSpot = True
+            if self.enableTurnOnSpot and abs(headingError) < self.stopTurnOnSpotThreshold:
+                self.isTurningOnSpot = False
+            if self.enableTurnOnSpot and self.isTurningOnSpot:
+                speed = 0
+            
+            # Set motor speeds based on PID outputs
+            self.leftSpeed = speed - turnSpeed
+            self.rightSpeed = speed + turnSpeed
+            
+            # Limit speed to maxMotorSpeed
+            self.leftSpeed = self.limit(self.leftSpeed, self.maxMotorSpeed)
+            self.rightSpeed = self.limit(self.rightSpeed, self.maxMotorSpeed)
+            
+            self.leftMotor.dc(self.leftSpeed)
+            self.rightMotor.dc(self.rightSpeed)
+            
+            wait(10) # Wait for a short duration before the next update
+    
+    def limit(self, value, limit):
+        if value > limit:
+            return limit
+        if value < -limit:
+            return -limit
+        return value
     
     def getHeading(self):
         """
         Returns the current heading of the robot in radians.
         """
-        # return self.gyro.angle() * math.pi / 180  # Convert degrees to radians
+        # return self.gyro.angle() * math.pi / 180 # Convert degrees to radians
         return self.theta
 
     def stop(self):
-        self.leftMotor.dc(0)  # Stop left motor
-        self.rightMotor.dc(0)  # Stop right motor
+        self.leftMotor.dc(0) # Stop left motor
+        self.rightMotor.dc(0) # Stop right motor
 
 if __name__ == "__main__":
     drivebase = DifferentialDrive(x=0, y=0, theta=0)
-    # drivebase.driveStraight(0.03)  # Drive forward 1000 degrees with a heading of 360 degrees
-    # drivebase.turnTo(math.radians(90))
-    # drivebase.driveStraight(0.03)  # Drive forward 1000 degrees with a heading of 360 degrees
-    # drivebase.turnTo(math.radians(90))
+    tile = 0.3048 # 1 foot
+    drivebase.drive(tile, math.radians(-90))
+    drivebase.drive(tile, math.radians(-180))
+    drivebase.drive(tile, math.radians(-270))
+    drivebase.drive(tile, math.radians(-360))

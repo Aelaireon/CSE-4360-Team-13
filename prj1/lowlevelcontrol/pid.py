@@ -58,7 +58,7 @@ class PID:
     def _getSign(self, val):
         return val/abs(val) if val != 0 else 0
 
-    def calculate(self, target, current) -> float:
+    def calculate(self, target, current, dt) -> float:
         """
         ### Calculate method - calculate PID output
 
@@ -80,7 +80,7 @@ class PID:
         self.integral += error * (self.integralAccumRatio if (error < 0 and target > 0) or (error > 0 and target < 0) else 1.0)
 
         # Update derivative value
-        derivative = error - self.prevError
+        derivative = (error - self.prevError) / dt
 
         # Limit integral accumlation
         if self.kI != 0.0 and self.resetIntegralOnSignChange and self._getSign(error) != self._getSign(self.prevError): self.integral = 0.0
