@@ -14,28 +14,35 @@ https://education.lego.com/en-us/support/mindstorms-ev3/building-instructions#ro
 from pybricks.hubs import EV3Brick
 from pybricks.ev3devices import Motor
 from pybricks.parameters import Port
-from pybricks.robotics import DriveBase
+from low_level_control.differential_drive import DifferentialDrive
+import math
 
 # Initialize the EV3 Brick.
 ev3 = EV3Brick()
 
-# Initialize the motors.
-left_motor = Motor(Port.A)
-right_motor = Motor(Port.D)
+drivebase = DifferentialDrive(x=0, y=0, theta=0)
+tile = 0.3048 # 1 foot
 
-# Initialize the drive base.
-robot = DriveBase(left_motor, right_motor, wheel_diameter=30.37, axle_track=123.31)
+# Bottom right square
+drivebase.drive(tile, math.radians(-90))
+drivebase.drive(tile, math.radians(-180))
+drivebase.drive(tile, math.radians(-270))
+drivebase.drive(tile, math.radians(-360))
 
-# robot.straight(1000)
-# Go forward and backwards for one meter.
-ev3.speaker.beep()
+# Bottom left square
+drivebase.drive(tile, math.radians(90))
+drivebase.drive(tile, math.radians(180))
+drivebase.drive(tile, math.radians(270))
+drivebase.drive(tile, math.radians(360))
 
-# robot.straight(-1000)
-# ev3.speaker.beep()
+# Top left square
+drivebase.drive(tile, math.radians(0))
+drivebase.drive(tile, math.radians(90))
+drivebase.drive(tile, math.radians(180))
+drivebase.drive(tile, math.radians(270))
 
-# # Turn clockwise by 360 degrees and back again.
-# robot.turn(360)
-# ev3.speaker.beep()
-
-# robot.turn(-360)
-# ev3.speaker.beep()
+# Top right square
+drivebase.drive(tile, math.radians(-0))
+drivebase.drive(tile, math.radians(-90))
+drivebase.drive(tile, math.radians(-180))
+drivebase.drive(tile, math.radians(-270))

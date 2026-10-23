@@ -5,7 +5,7 @@ import threading
 from pybricks.ev3devices import GyroSensor, Motor
 from pybricks.parameters import Direction, Port, Stop
 from pybricks.tools import StopWatch, wait
-from pid import PID
+from low_level_control.pid import PID
 
 class DifferentialDrive:
     def __init__(self, x, y, theta, maxMotorSpeed=40, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
@@ -215,7 +215,7 @@ class DifferentialDrive:
 
 if __name__ == "__main__":
     drivebase = DifferentialDrive(x=0, y=0, theta=0)
-    tile = 0.3048 # 1 foot
+    tile = 0.3048 # 1 foot in meters
     
     # Bottom right square
     drivebase.drive(tile, math.radians(-90))
