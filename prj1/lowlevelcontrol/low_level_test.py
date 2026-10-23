@@ -8,7 +8,20 @@ from pybricks.tools import StopWatch, wait
 from pid import PID
 
 class DifferentialDrive:
-    def __init__(self, x, y, theta, maxMotorSpeed=20, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
+    def __init__(self, x, y, theta, maxMotorSpeed=40, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
+        """
+        Creates a two-wheeled differential robot controller.
+        
+        :param m x: The starting x coordinate
+        :param m y: The starting y coordinate
+        :param rad theta: The starting orientation
+        :param % maxMotorSpeed: The max motor duty cycle in percent
+        :param mm wheelDiameter: Wheel diameter
+        :param mm axleTrack: Distance between the two wheels
+        :param Port leftMotorPort: Left motor port
+        :param Port rightMotorPort: Right motor port
+        """
+        
         self.x = x # Current x position in meters
         self.y = y # Current y position in meters
         self.theta = theta # Current heading in radians
@@ -23,8 +36,8 @@ class DifferentialDrive:
         # Turn on spot feature
         self.enableTurnOnSpot = True
         self.isTurningOnSpot = False
-        self.turnOnSpotThreshold = math.radians(5)
-        self.stopTurnOnSpotThreshold = math.radians(1)
+        self.turnOnSpotThreshold = math.radians(10)
+        self.stopTurnOnSpotThreshold = math.radians(8)
         
         # Robot physical parameters
         self.mass = 0.592 # kg
@@ -41,7 +54,8 @@ class DifferentialDrive:
         )
         
         kp_heading = 100.0
-        ki_heading = 10.0
+        # ki_heading = 10.0
+        ki_heading = 0.0
         kd_heading = 2 * math.sqrt(self.mass * kp_heading)
         self.headingPID = PID(
             kP=kp_heading, 
@@ -49,6 +63,7 @@ class DifferentialDrive:
             kD=kd_heading, 
             accumLimit=10, 
             accumUnder=math.radians(10), 
+            resetIntegralOnSignChange=True,
             outputRange=[-maxMotorSpeed, maxMotorSpeed]
         )
 
@@ -56,6 +71,8 @@ class DifferentialDrive:
         self.timer = StopWatch()
         self.leftSpeed = 0.0
         self.rightSpeed = 0.0
+        self.rampLeftSpeed = 0.0
+        self.rampRightSpeed = 0.0
         self.configureSensors()
         self.configureMotors()
         
@@ -70,7 +87,7 @@ class DifferentialDrive:
             # Update pose
             print("Position: (", self.x * 1000, ", ", self.y * 1000, "), Heading: ", math.degrees(self.theta), " degrees")
             # Update commands
-            print("OnSpotTurn: ", self.isTurningOnSpot, "left: ", self.leftSpeed, "right: ", self.rightSpeed)
+            print("OnSpotTurn: ", self.isTurningOnSpot, "left: ", self.rampLeftSpeed, "right: ", self.rampRightSpeed)
             print()
     
     def odometryLoop(self):
@@ -159,10 +176,24 @@ class DifferentialDrive:
             self.leftSpeed = self.limit(self.leftSpeed, self.maxMotorSpeed)
             self.rightSpeed = self.limit(self.rightSpeed, self.maxMotorSpeed)
             
-            self.leftMotor.dc(self.leftSpeed)
-            self.rightMotor.dc(self.rightSpeed)
+            # Ramp rate control
+            self.rampLeftSpeed, self.rampRightSpeed = self.rampRateControl(self.leftSpeed, self.rightSpeed, self.rampLeftSpeed, self.rampRightSpeed)
+            
+            # self.leftMotor.dc(self.leftSpeed)
+            # self.rightMotor.dc(self.rightSpeed)
+            self.leftMotor.dc(self.rampLeftSpeed)
+            self.rightMotor.dc(self.rampRightSpeed)
             
             wait(10) # Wait for a short duration before the next update
+        self.stop()
+    
+    def rampRateControl(self, leftSpeed, rightSpeed, rampLeftSpeed, rampRightSpeed):
+        leftIncrement = self.limit(leftSpeed - rampLeftSpeed, self.maxMotorSpeed / 10)
+        rampLeftSpeed += leftIncrement
+        
+        rightIncrement = self.limit(rightSpeed - rampRightSpeed, self.maxMotorSpeed / 10)
+        rampRightSpeed += rightIncrement
+        return rampLeftSpeed, rampRightSpeed
     
     def limit(self, value, limit):
         if value > limit:
@@ -185,7 +216,27 @@ class DifferentialDrive:
 if __name__ == "__main__":
     drivebase = DifferentialDrive(x=0, y=0, theta=0)
     tile = 0.3048 # 1 foot
+    
+    # Bottom right square
     drivebase.drive(tile, math.radians(-90))
     drivebase.drive(tile, math.radians(-180))
     drivebase.drive(tile, math.radians(-270))
     drivebase.drive(tile, math.radians(-360))
+    
+    # Bottom left square
+    drivebase.drive(tile, math.radians(90))
+    drivebase.drive(tile, math.radians(180))
+    drivebase.drive(tile, math.radians(270))
+    drivebase.drive(tile, math.radians(360))
+    
+    # Top left square
+    drivebase.drive(tile, math.radians(0))
+    drivebase.drive(tile, math.radians(90))
+    drivebase.drive(tile, math.radians(180))
+    drivebase.drive(tile, math.radians(270))
+    
+    # Top right square
+    drivebase.drive(tile, math.radians(-0))
+    drivebase.drive(tile, math.radians(-90))
+    drivebase.drive(tile, math.radians(-180))
+    drivebase.drive(tile, math.radians(-270))
