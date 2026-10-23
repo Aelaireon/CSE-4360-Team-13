@@ -202,12 +202,15 @@ class DifferentialDrive:
             return -limit
         return value
     
-    def getHeading(self):
+    def getPose(self):
         """
-        Returns the current heading of the robot in radians.
+        Returns the current pose of the robot in meters and radians as a tuple.
+        
+        Example:
+        global_x, global_y, global_theta = drivebase.getPose()
         """
         # return self.gyro.angle() * math.pi / 180 # Convert degrees to radians
-        return self.theta
+        return self.x, self.y, self.theta
 
     def stop(self):
         self.leftMotor.dc(0) # Stop left motor
