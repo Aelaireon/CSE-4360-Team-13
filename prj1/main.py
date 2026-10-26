@@ -15,13 +15,15 @@ from pybricks.hubs import EV3Brick
 from pybricks.ev3devices import Motor
 from pybricks.parameters import Port
 from low_level_control.differential_drive import DifferentialDrive
+from path_finder import astar
 import math
 
 # Initialize the EV3 Brick.
 ev3 = EV3Brick()
 
-drivebase = DifferentialDrive(x=0, y=0, theta=0)
-tile = 0.3048 # 1 foot
+start = {0.305, 1.219}
+drivebase = DifferentialDrive(x=start[0], y=start[1], theta=0)
+tile = 0.3048 # = 1 foot
 
 # Bottom right square
 drivebase.drive(tile, math.radians(-90))
@@ -46,3 +48,43 @@ drivebase.drive(tile, math.radians(-0))
 drivebase.drive(tile, math.radians(-90))
 drivebase.drive(tile, math.radians(-180))
 drivebase.drive(tile, math.radians(-270))
+
+
+goal = {3.658, 1.829};
+
+
+maze = 0
+"""
+# returns something like
+
+[
+    [0,0,0,0,1,0],
+    [1,1,0,1,1,0],
+    [0,0,0,0,0,0],
+    [0,1,1,1,1,0],
+    [0,0,0,0,0,0]
+]
+"""
+
+start_point = (0,0)
+end_point = (4,5)
+
+shortest_path = astar(maze, start_point, end_point)
+print("Path found:", shortest_path)
+
+"""
+will be given something like:
+#define MAX_OBSTACLES 25 /* maximum number of obstacles */
+int num_obstacles = 13; /* number of obstacles */
+double obstacle[MAX_OBSTACLES][2] = /* obstacle locations */
+{{0.61, 2.743},{0.915, 2.743},{1.219, 2.743},{1.829, 1.219},
+{1.829, 1.524},{ 1.829, 1.829}, {1.829, 2.134},{2.743, 0.305},
+{2.743, 0.61},{2.743, 0.915},{2.743, 2.743},{3.048, 2.743},
+{3.353, 2.743},
+{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},
+{-1,-1},{-1,-1},{-1,-1}};
+double start[2] = {0.305, 1.219}; /* start location */
+double goal[2] = {3.658, 1.829}; /* goal location */
+
+NEED TO HAVE PATHFINDER PROCESS IT INTO THE MAZE LIKE GRID IT CURRENTLY USES.
+"""

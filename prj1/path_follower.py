@@ -1,21 +1,23 @@
 #!/usr/bin/env pybricks-micropython
 import math
-from low_control import drive, getHeading
+from low_level_control.differential_drive import DifferentialDrive
 
 # 1 ft = 0.3048 m, 1 tile = 1 ft, so 1 tile = 0.3048 m
 
 class PathFollower:
-    def __init__(self, start_x, start_y):
+    def __init__(self, start_x, start_y, drivebase: DifferentialDrive):
         """
-        Initializes the follower with starting coordinates (in feet/tiles coordinate system).
+        Initializes the follower with starting coordinates (in feet/tiles coordinate system)
+        and a configured differential drive controller.
         """
         self.x = start_x
         self.y = start_y
+        self.drivebase = drivebase
 
     def navigate_to(self, target_x, target_y):
         """
         Calculates distance and absolute target heading to target, 
-        then calls drive(speed, heading).
+        then sends the movement to the differential drive controller.
         """
         dx = target_x - self.x
         dy = target_y - self.y
@@ -26,10 +28,7 @@ class PathFollower:
         if distance < 0.001:
             return
             
-        # fetch the live current heading from low-control
-        current_heading = getHeading()
-        
-        # calculate the target heading into degrees (to match getHeading() format)
+        current_heading = math.degrees(self.drivebase.getPose()[2])
         target_heading_rad = math.atan2(dy, dx)
         target_heading_deg = math.degrees(target_heading_rad)
         
@@ -40,7 +39,7 @@ class PathFollower:
         
         print(f"Current: {current_heading}° | Target: {target_heading_deg}° | Turn: {turn_angle}°")
         
-        drive(distance, target_heading_deg)
+        self.drivebase.drive(distance * 0.3048, target_heading_rad)
         
         # update internal position state after moving
         self.x = target_x
@@ -52,5 +51,5 @@ class PathFollower:
         """
         for pt in waypoints:
             target_x, target_y = pt
-            print("Navigating to waypoint: ({}, {})".format(target_x, target_y))
+            print(f"Navigating to waypoint: ({target_x}, {target_y})")
             self.navigate_to(target_x, target_y)
