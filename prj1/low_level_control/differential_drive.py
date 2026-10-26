@@ -151,7 +151,8 @@ class DifferentialDrive:
             
             # Calculate the desired heading to the target position
             desiredHeading = math.atan2(targetY - self.y, targetX - self.x)
-            headingError = desiredHeading - self.getHeading()
+            _, _, heading = self.getPose()
+            headingError = desiredHeading - heading
             headingError = (headingError + math.pi) % (2 * math.pi) - math.pi # Normalize to [-pi, pi]
             
             # Use PID controllers for speed and heading
