@@ -21,10 +21,30 @@ import math
 # Initialize the EV3 Brick.
 ev3 = EV3Brick()
 
-start = {0.305, 1.219}
+# Initialize test values for start, goal, and obstacles
+start = (0.305, 1.219)
+goal = (3.658, 1.829)
+obstacle = [    
+    (0.610, 2.743),
+    (0.915, 2.743),
+    (1.219, 2.743),
+    (1.829, 1.219),
+    (1.829, 1.524),
+    (1.829, 1.829),
+    (1.829, 2.134),
+    (2.743, 0.305),
+    (2.743, 0.610),
+    (2.743, 0.915),
+    (2.743, 2.743),
+    (3.048, 2.743),
+    (3.353, 2.743)
+]
+
+# notice: start[0], start[1] 
 drivebase = DifferentialDrive(x=start[0], y=start[1], theta=0)
 tile = 0.3048 # = 1 foot
 
+"""
 # Bottom right square
 drivebase.drive(tile, math.radians(-90))
 drivebase.drive(tile, math.radians(-180))
@@ -48,10 +68,7 @@ drivebase.drive(tile, math.radians(-0))
 drivebase.drive(tile, math.radians(-90))
 drivebase.drive(tile, math.radians(-180))
 drivebase.drive(tile, math.radians(-270))
-
-
-goal = {3.658, 1.829};
-
+"""
 
 maze = 0
 """
@@ -74,17 +91,39 @@ print("Path found:", shortest_path)
 
 """
 will be given something like:
-#define MAX_OBSTACLES 25 /* maximum number of obstacles */
-int num_obstacles = 13; /* number of obstacles */
-double obstacle[MAX_OBSTACLES][2] = /* obstacle locations */
-{{0.61, 2.743},{0.915, 2.743},{1.219, 2.743},{1.829, 1.219},
-{1.829, 1.524},{ 1.829, 1.829}, {1.829, 2.134},{2.743, 0.305},
-{2.743, 0.61},{2.743, 0.915},{2.743, 2.743},{3.048, 2.743},
-{3.353, 2.743},
-{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},{-1,-1},
-{-1,-1},{-1,-1},{-1,-1}};
-double start[2] = {0.305, 1.219}; /* start location */
-double goal[2] = {3.658, 1.829}; /* goal location */
+MAX_OBSTACLES = 25  # maximum number of obstacles
+num_obstacles = 13  # number of obstacles
 
-NEED TO HAVE PATHFINDER PROCESS IT INTO THE MAZE LIKE GRID IT CURRENTLY USES.
+# obstacle locations
+obstacle = [
+    [0.61, 2.743],
+    [0.915, 2.743],
+    [1.219, 2.743],
+    [1.829, 1.219],
+    [1.829, 1.524],
+    [1.829, 1.829],
+    [1.829, 2.134],
+    [2.743, 0.305],
+    [2.743, 0.61],
+    [2.743, 0.915],
+    [2.743, 2.743],
+    [3.048, 2.743],
+    [3.353, 2.743],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+    [-1, -1],
+]
+start = [0.305, 1.219]  # start location
+goal = [3.658, 1.829]  # goal location
+
+NEED TO HAVE PATHFINDER PROCESS IT INTO THE MAZE LIKE GRID IT CURRENTLY USES. (or switch up how the pathfinder works)
 """

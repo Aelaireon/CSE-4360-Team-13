@@ -69,7 +69,7 @@ class PathFinder:
             #child node creation
             child = PathFinder(node_position, current_node)
             child.g = current_node.g + 1
-            child.h = heuristic(child.position, end_node.position)
+            child.h = child.heuristic(child.position, end_node.position)
             child.f = child.g + child.h
 
             #node exception

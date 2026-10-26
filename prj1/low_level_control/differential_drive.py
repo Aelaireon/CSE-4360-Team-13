@@ -83,13 +83,16 @@ class DifferentialDrive:
         self.logger.start()
     
     def loggerLoop(self):
-        while True:
+        testing = 1
+        if not testing:
             # Update pose
             print("Position: (", self.x * 1000, ", ", self.y * 1000, "), Heading: ", math.degrees(self.theta), " degrees")
             # Update commands
             print("OnSpotTurn: ", self.isTurningOnSpot, "left: ", self.rampLeftSpeed, "right: ", self.rampRightSpeed)
             print()
+            
     
+
     def odometryLoop(self):
         prevLeftMotorRotation = 0.0
         prevRightMotorRotation = 0.0

@@ -53,3 +53,11 @@ class PathFollower:
             target_x, target_y = pt
             print(f"Navigating to waypoint: ({target_x}, {target_y})")
             self.navigate_to(target_x, target_y)
+
+
+if __name__ == "__main__":
+    x = PathFollower(0.305, 1.219, DifferentialDrive(x=0.305, y=1.219, theta=0))
+    # right one tile, then turn and go up one tile
+    waypoints = [(0.305, 1.524), (0.610, 1.524)]
+    x.follow_path(waypoints)
+    print("hello world")
