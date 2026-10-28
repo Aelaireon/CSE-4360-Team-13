@@ -18,6 +18,8 @@ from low_level_control.differential_drive import DifferentialDrive
 from path_finder import PathFinder
 import math
 
+from path_follower import PathFollower
+
 # Initialize the EV3 Brick.
 ev3 = EV3Brick()
 
@@ -40,9 +42,9 @@ obstacle = [
     (3.353, 2.743)
 ]
 
-# notice: start[0], start[1] 
+# notice: start[0], start[1]
 drivebase = DifferentialDrive(x=start[0], y=start[1], theta=0)
-tile = 0.3048 # = 1 foot
+tile = 0.3048  # = 1 foot
 
 maze = [
     [0,0,0,0,1,0],
@@ -54,6 +56,17 @@ maze = [
 
 start_point = (0,0)
 end_point = (4,5)
+# end_point = (0,1)
 
 shortest_path = PathFinder.astar(maze, start_point, end_point)
 print("Path found:", shortest_path)
+
+if shortest_path:
+    path_waypoints = [(col * tile + start[0], row * tile + start[1]) for row, col in shortest_path]
+    # The planner includes the starting cell, but the robot is already there.
+    # Skip the initial waypoint so it does not try to drive to its own position.
+    path_waypoints = path_waypoints[1:]
+
+    follower = PathFollower(start[0], start[1], drivebase)
+    print("Following path:", path_waypoints)
+    follower.follow_path(path_waypoints)

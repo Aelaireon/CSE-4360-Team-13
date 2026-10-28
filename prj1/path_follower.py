@@ -29,7 +29,7 @@ class PathFollower:
             return
             
         current_heading = math.degrees(self.drivebase.getPose()[2])
-        target_heading_rad = math.atan2(dy, dx)
+        target_heading_rad = -math.atan2(dy, dx)
         target_heading_deg = math.degrees(target_heading_rad)
         
         # calculate the relative turn angle needed 
@@ -37,9 +37,11 @@ class PathFollower:
         # normalized between -180 and 180, realistically shouldnt be more than 90 degrees in either direction if path is reasonable
         turn_angle = (turn_angle + 180) % 360 - 180  
         
-        print("Current:", current_heading, "° | Target:", target_heading_deg, "° | Turn:", turn_angle, "°")
+        # print("Current:", current_heading, "° | Target:", target_heading_deg, "° | Turn:", turn_angle, "°")
+        print("Distance:", distance, "Heading: ", target_heading_deg)
         
-        self.drivebase.drive(distance * 0.3048, target_heading_rad)
+        # self.drivebase.drive(distance * 0.3048, target_heading_rad)
+        self.drivebase.drive(distance, target_heading_rad)
         
         # update internal position state after moving
         self.x = target_x
