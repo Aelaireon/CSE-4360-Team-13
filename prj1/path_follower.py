@@ -29,7 +29,7 @@ class PathFollower:
             return
             
         current_heading = math.degrees(self.drivebase.getPose()[2])
-        target_heading_rad = -math.atan2(dy, dx)
+        target_heading_rad = math.atan2(dy, dx)
         target_heading_deg = math.degrees(target_heading_rad)
         
         # calculate the relative turn angle needed 
