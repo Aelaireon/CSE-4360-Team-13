@@ -2,82 +2,84 @@
 from path_follower import PathFollower
 import heapq
 
+
 class PathFinder:
-    def __init__(self, position):
-        self.position = position #(row, col)
+    def __init__(self, position, parent=None):
+        self.position = position  # (row, col)
+        self.parent = parent
 
         self.g = 0
         self.h = 0
-        self.f = 0 #g+h
+        self.f = 0  # g + h
 
-    def __It__(self, other):
+    def __lt__(self, other):
         return self.f < other.f
 
+    @staticmethod
     def heuristic(current, goal):
         return abs(current[0] - goal[0]) + abs(current[1] - goal[1])
 
+    @staticmethod
     def astar(grid, start, end):
-        start_node = PathFinder(start)
-        end_node = PathFinder(end)
+        if not grid or not grid[0]:
+            return None
 
+        if start == end:
+            return [start]
+
+        rows = len(grid)
+        cols = len(grid[0])
+
+        if not (0 <= start[0] < rows and 0 <= start[1] < cols):
+            return None
+        if not (0 <= end[0] < rows and 0 <= end[1] < cols):
+            return None
+        if grid[start[0]][start[1]] != 0 or grid[end[0]][end[1]] != 0:
+            return None
+
+        start_node = PathFinder(start)
         open_list = []
         closed_set = set()
-
-        heapq.heappush(open_list, start_node)
-
         open_positions = {start: 0}
 
-        rows, cols = len(grid), len(grid[0])
+        heapq.heappush(open_list, start_node)
 
         while open_list:
             current_node = heapq.heappop(open_list)
             current_pos = current_node.position
 
-            if current_pos in open_positions and open_positions[current_pos] == current_node.g:
-                del open_positions[current_pos]
+            if current_pos in closed_set:
+                continue
 
-            #found goal
-            if current_pos == end_node.position:
+            if current_pos == end:
                 path = []
-                current = current_node
-                
-            while current_node is not None:
-                path.append(current.position)
-                current_path = current.parent
-            return path[::-1] #return reversed path
+                while current_node is not None:
+                    path.append(current_node.position)
+                    current_node = current_node.parent
+                return path[::-1]
 
-        closed_set.add(current_pos)
+            closed_set.add(current_pos)
 
-        #children nodes
-        adjacent_movements = [(0,-1),(0,1),(-1,0),(1,0)]
+            for delta_row, delta_col in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+                neighbor = (current_pos[0] + delta_row, current_pos[1] + delta_col)
 
-        for new_position in adjacent_movements:
-            node_position = (current_pos[0] + new_position[0], current_pos[1] + new_position[1])
+                if not (0 <= neighbor[0] < rows and 0 <= neighbor[1] < cols):
+                    continue
+                if grid[neighbor[0]][neighbor[1]] != 0:
+                    continue
+                if neighbor in closed_set:
+                    continue
 
-            #range checker
-            if not (0 <= node_position[0] < rows and 0 <= node_position[1] < cols):
-                continue
-            
-            #traversable terrain checker
-            if grid[node_position[0]][node_position[1]] != 0:
-                continue
-            
-            #if already evaluated
-            if node_position in closed_set:
-                continue
+                child = PathFinder(neighbor, current_node)
+                child.g = current_node.g + 1
+                child.h = PathFinder.heuristic(neighbor, end)
+                child.f = child.g + child.h
 
-            #child node creation
-            child = PathFinder(node_position, current_node)
-            child.g = current_node.g + 1
-            child.h = child.heuristic(child.position, end_node.position)
-            child.f = child.g + child.h
+                existing_cost = open_positions.get(neighbor)
+                if existing_cost is not None and existing_cost <= child.g:
+                    continue
 
-            #node exception
-            if node_position in open_positions and open_positions[node_position] <= child.g:
-                continue
-
-            #add child to open list
-            heapq.heappush(open_list, child)
-            open_positions[node_position] = child.g
+                heapq.heappush(open_list, child)
+                open_positions[neighbor] = child.g
 
         return None

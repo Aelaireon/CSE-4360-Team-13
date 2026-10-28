@@ -37,7 +37,7 @@ class PathFollower:
         # normalized between -180 and 180, realistically shouldnt be more than 90 degrees in either direction if path is reasonable
         turn_angle = (turn_angle + 180) % 360 - 180  
         
-        print(f"Current: {current_heading}° | Target: {target_heading_deg}° | Turn: {turn_angle}°")
+        print("Current:", current_heading, "° | Target:", target_heading_deg, "° | Turn:", turn_angle, "°")
         
         self.drivebase.drive(distance * 0.3048, target_heading_rad)
         
@@ -51,7 +51,7 @@ class PathFollower:
         """
         for pt in waypoints:
             target_x, target_y = pt
-            print(f"Navigating to waypoint: ({target_x}, {target_y})")
+            print("Navigating to waypoint:", (target_x, target_y))
             self.navigate_to(target_x, target_y)
 
 
