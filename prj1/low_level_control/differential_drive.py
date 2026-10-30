@@ -3,7 +3,7 @@ import math
 import threading
 
 from pybricks.ev3devices import GyroSensor, Motor
-from pybricks.parameters import Direction, Port, Stop
+from pybricks.parameters import Direction, Port
 from pybricks.tools import StopWatch, wait
 from low_level_control.pid import PID
 
@@ -76,7 +76,8 @@ class DifferentialDrive:
         self.configureSensors()
         self.configureMotors()
         
-        # Start threads
+        # Start threads (odometryLoop keeps running until shutdown() clears this flag)
+        self.running = True
         self.odometryThread = threading.Thread(target=self.odometryLoop)
         self.odometryThread.start()
         self.logger = threading.Thread(target=self.loggerLoop)
@@ -96,7 +97,7 @@ class DifferentialDrive:
     def odometryLoop(self):
         prevLeftMotorRotation = 0.0
         prevRightMotorRotation = 0.0
-        while True:
+        while self.running:
             # Get the current motor rotations
             leftMotorRotation = self.leftMotor.angle() # in degrees
             rightMotorRotation = self.rightMotor.angle() # in degrees
@@ -111,6 +112,8 @@ class DifferentialDrive:
             
             # Update odometry based on motor rotations
             self.odometryUpdate(deltaLeftMotorRotation, deltaRightMotorRotation)
+            
+            wait(10) # yield 10ms so this thread doesnt busy-loop and potentially starve the control loop
         
     def odometryUpdate(self, leftMotorRotation, rightMotorRotation):
         # Calculate the distance each wheel has traveled
@@ -135,6 +138,9 @@ class DifferentialDrive:
     def configureMotors(self):
         self.leftMotor = Motor(self.leftMotorPort, positive_direction=Direction.CLOCKWISE) # only way to get forward to be positive
         self.rightMotor = Motor(self.rightMotorPort, positive_direction=Direction.CLOCKWISE)
+        # i believe this is already implicitly done, but explicitly resetting the angles anyways
+        self.leftMotor.reset_angle(0)
+        self.rightMotor.reset_angle(0)
 
     def drive(self, distance, heading):
         """
@@ -145,6 +151,10 @@ class DifferentialDrive:
         """
         targetX = self.x + distance * math.cos(heading)
         targetY = self.y + distance * math.sin(heading)
+        
+        # Start each move from clean PID state (stale prevError/integral from the previous move would otherwise leak in)
+        self.positionPID.reset()
+        self.headingPID.reset()
         
         prevTime = -0.0001
         while math.sqrt((targetX - self.x) ** 2 + (targetY - self.y) ** 2) > 0.01: # Continue until within 1 cm of target
@@ -219,6 +229,17 @@ class DifferentialDrive:
     def stop(self):
         self.leftMotor.dc(0) # Stop left motor
         self.rightMotor.dc(0) # Stop right motor
+        # keep the ramp state in sync with the stopped motors so the next drive() ramps up from 0
+        self.rampLeftSpeed = 0.0
+        self.rampRightSpeed = 0.0
+
+    def shutdown(self):
+        """
+        Stops the motors and ends the odometry thread so the program can exit.
+        Without this the program never terminates.
+        """
+        self.running = False
+        self.stop()
 
 if __name__ == "__main__":
     drivebase = DifferentialDrive(x=0, y=0, theta=0)

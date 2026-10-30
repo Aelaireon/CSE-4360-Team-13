@@ -2,11 +2,11 @@
 
 class PID:
     """
-    ### PID class - create PID controller
+    PID class - create PID controller
 
     This class is used to simplify creation of PID controllers.
 
-    #### Arguments:
+    Arguments:
         kP: The proportional constant (how reactive the PID controller is)
         kI: The integral constant (how impactful the PID controllelr is for small movements)
         kD: The derivative constant (how much to dampen the PID controller)
@@ -14,10 +14,10 @@ class PID:
         accumLimit: Limit for integral accumlation from errors
         accumUnder: Threshold for error under which integral accumulation starts (i.e. integral is 0 until abs(error) < accumUnder)
 
-    #### Returns:
+    Returns:
         A new PID controller object
 
-    #### Examples:
+    Examples:
         pid1 = PID(1)\\
         pid2 = PID(1, 0.5)\\
         pid3 = PID(1, 0.5, 0.25)
@@ -48,27 +48,35 @@ class PID:
         self.prevError = 0.0
         self.integral = 0.0
         self.prevDir = 0.0 # Tracks current direction (i.e. which sign error is +/-)
-
+    
+    """ not used in the current implementation of the PID class
     def getIntegralAccum(self):
         return self.integral
     
     def resetIntegral(self):
         self.integral = 0
+    """
+
+    def reset(self):
+        """Clears all stored state (integral and previous error). Call before reusing the PID for a new move."""
+        self.integral = 0.0
+        self.prevError = 0.0
+        self.prevDir = 0.0
 
     def _getSign(self, val):
         return val/abs(val) if val != 0 else 0
 
     def calculate(self, target, current, dt) -> float:
         """
-        ### Calculate method - calculate PID output
+        Calculate method - calculate PID output
 
         This method is used to calculate a new output based on the previous output
 
-        #### Arguments:
+        Arguments:
             target: Desired value
             current: Current value to compare to
 
-        #### Returns:
+        Returns:
             The control value as a float
         """
         # Calculate error
