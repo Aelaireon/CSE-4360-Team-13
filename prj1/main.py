@@ -19,8 +19,8 @@ bottom-left corner of the 4.88 x 3.05 m workspace (16 x 10 tiles), +x right,
 from pybricks.hubs import EV3Brick
 from low_level_control.differential_drive import DifferentialDrive
 from path_follower import PathFollower
-from path_finder import find_waypoints   # [PROPOSED] enable once path_finder.py is fixed (see its notes)
-
+from path_finder import find_waypoints
+import math
 
 # =============================================================================
 # COURSE DATA  (in meters)
@@ -69,34 +69,21 @@ def main():
     follower = PathFollower(start[0], start[1], drivebase)
 
     try:
-        # ---------------------------------------------------------------------
-        # STEP 3 - FOLLOW THE PATH (this IS the main loop, for now)  [PROPOSED wiring]
-        # ---------------------------------------------------------------------
-        # follower.follow_path() is blocking and already implemented. For each
-        # waypoint, navigate_to() reads drivebase.getPose(), computes distance and
-        # global heading, calls drivebase.drive(distance, heading) (turns, drives,
-        # stops), and raises ValueError before moving if any waypoint is outside
-        # the workspace.
-        #
-        #   follower.follow_path(waypoints)
+        waypoints = find_waypoints(start, goal, obstacle)
+        follower.follow_path(waypoints)
 
-        # ---------------------------------------------------------------------
-        # STEP 4 - GOAL CHECK AND TERMINATION                        [PROPOSED]
-        # ---------------------------------------------------------------------
-        #   x, y, _ = drivebase.getPose()
-        #   if distance((x, y), goal) <= GOAL_TOLERANCE_M:      # tolerance still to decide
-        #       print("Goal reached")
-        #   else:
-        #       optional bounded retry (1-2 times): follower.navigate_to(goal[0], goal[1])
-        #       report the final pose
-        #
-        # The run ends when: all waypoints are done, the planner returned None,
-        # ValueError was raised by the workspace check, or any other exception
-        # occurred. An optional global timeout can use pybricks.tools.StopWatch.
+        x, y, _ = drivebase.getPose()
+        distance_x = goal[0] - x
+        distance_y = goal[1] - y
+        distance = math.sqrt(distance_x**2 + distance_y**2)
+        if distance <= 1:
+            print("Goal reached")
+        else:
+            print("Goal not reached, pose: (%.3f, %.3f)" % (x, y))
+            print("trying to go directly to goal as last ditch effort.")
+            follower.navigate_to(goal[0], goal[1])
         pass
     finally:
-        # Always leave the motors off and let the odometry thread end so the
-        # program can exit.                                        [EXISTING]
         drivebase.shutdown()
 
 if __name__ == "__main__":
