@@ -19,11 +19,11 @@ bottom-left corner of the 4.88 x 3.05 m workspace (16 x 10 tiles), +x right,
 from pybricks.hubs import EV3Brick
 from low_level_control.differential_drive import DifferentialDrive
 from path_follower import PathFollower
-# from path_finder import find_waypoints   # [PROPOSED] enable once path_finder.py is fixed (see its notes)
+from path_finder import find_waypoints   # [PROPOSED] enable once path_finder.py is fixed (see its notes)
 
 
 # =============================================================================
-# COURSE DATA  (meters; the 2008 example course from the project PDF, for testing)
+# COURSE DATA  (in meters)
 # =============================================================================
 # The instructor's header also has MAX_OBSTACLES = 25 / num_obstacles = 13 and pads
 # the obstacle list with (-1, -1); the padding is omitted here, so len(obstacle)
@@ -98,15 +98,6 @@ def main():
         # Always leave the motors off and let the odometry thread end so the
         # program can exit.                                        [EXISTING]
         drivebase.shutdown()
-
-
-# If DifferentialDrive changes (teammate plans drive(x, y), a threshold parameter
-# and a larger turn-on-spot threshold): only the single drive(...) call inside
-# PathFollower.navigate_to() needs to change. If drive() becomes non-blocking or
-# per-step (e.g. for a local planner), STEP 3 turns into a loop of
-# "read getPose() -> pick next target -> command drivebase -> sleep briefly" until
-# the goal or a timeout. That is a different design and should be agreed with the
-# low-level owner first.
 
 if __name__ == "__main__":
     main()

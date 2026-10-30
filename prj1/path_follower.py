@@ -30,7 +30,7 @@ class PathFollower:
         self.drivebase = drivebase
 
     def _check_in_workspace(self, x, y):
-        """Raises ValueError if (x, y) in meters lies outside the workspace."""
+        """check if given waypoint lies inside the workspace, raises error otherwise"""
         if (x < -BOUNDS_EPSILON_M or x > WORKSPACE_WIDTH_M + BOUNDS_EPSILON_M or
                 y < -BOUNDS_EPSILON_M or y > WORKSPACE_HEIGHT_M + BOUNDS_EPSILON_M):
             raise ValueError(
@@ -83,9 +83,7 @@ class PathFollower:
         workspace bounds before the robot moves, so a bad waypoint raises
         ValueError up front instead of halfway through the run.
         """
-        for pt in waypoints:
-            self._check_in_workspace(pt[0], pt[1])
-
+        
         for pt in waypoints:
             target_x, target_y = pt
             print("Navigating to waypoint: (%.3f, %.3f) m" % (target_x, target_y))
@@ -94,8 +92,11 @@ class PathFollower:
 
 if __name__ == "__main__":
     start_x, start_y = 0.305, 1.219  # meters
-    x = PathFollower(start_x, start_y, DifferentialDrive(x=start_x, y=start_y, theta=0))
-    # up one tile (+y), then right one tile (+x)
-    waypoints = [(0.305, 1.524), (0.610, 1.524)]
-    x.follow_path(waypoints)
+    drivebase = DifferentialDrive(x=start_x, y=start_y, theta=0)
+    follower = PathFollower(start_x, start_y, drivebase)
+    try:
+        # up one tile (+y), then right one tile (+x)
+        follower.follow_path([(0.305, 1.524), (0.610, 1.524)])
+    finally:
+        drivebase.shutdown()
     print("done")
