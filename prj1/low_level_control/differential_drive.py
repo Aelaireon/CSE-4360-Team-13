@@ -152,7 +152,7 @@ class DifferentialDrive:
         targetX = self.x + distance * math.cos(heading)
         targetY = self.y + distance * math.sin(heading)
         
-        # Start each move from clean PID state (stale prevError/integral from the previous move would otherwise leak in)
+        # Starts each move from clean PID state (stale prevError/integral from the previous move would otherwise leak in)
         self.positionPID.reset()
         self.headingPID.reset()
         

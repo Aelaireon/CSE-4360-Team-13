@@ -1,7 +1,7 @@
 #!/usr/bin/env pybricks-micropython
 
 """
-CSE 4360 / 5364 - Project 1: navigate a known obstacle course with the LEGO EV3 robot.
+CSE 4360 - Project 1: navigate a known obstacle course with the LEGO EV3 robot.
 
 Requires LEGO(R) EV3 MicroPython v2.0.
 Download: https://education.lego.com/en-us/support/mindstorms-ev3/python-for-ev3
@@ -10,9 +10,6 @@ Data flow (numbered steps are in main() below):
     course data (m) -> path_finder -> waypoints (m) -> PathFollower
         -> DifferentialDrive.drive() -> motors
     DifferentialDrive.getPose() (odometry) is read back by PathFollower.
-
-Comment tags:  [EXISTING] = implemented and usable now
-               [PROPOSED] = pseudocode only, does not exist yet
 
 Coordinate contract (same in every file): METERS, global frame. Origin is the
 bottom-left corner of the 4.88 x 3.05 m workspace (16 x 10 tiles), +x right,

@@ -20,12 +20,11 @@ BOUNDS_EPSILON_M = 1e-6    # float slack for the workspace check
 
 
 class PathFollower:
-    def __init__(self, drivebase: DifferentialDrive):
+    def __init__(self, start_x, start_y, drivebase: DifferentialDrive):
         """
         Initializes the follower with the starting coordinates (METERS, global frame) and a configured differential drive controller.
 
         start_x / start_y should match the pose the drivebase was constructed with. 
-        self.x / self.y are only a record of where the follower believes the robot is; 
         navigation itself always starts from drivebase.getPose().
         """
         self.drivebase = drivebase
@@ -54,8 +53,8 @@ class PathFollower:
         dy = target_y - pose_y
         distance = math.sqrt(dx**2 + dy**2)  # meters
 
+        # likely wont ever run realistically in our specific environment, but included for safety
         if distance < MIN_MOVE_M:
-            self.x, self.y = pose_x, pose_y
             return
 
         # drive(distance, heading) expects an ABSOLUTE global heading (measured
@@ -74,7 +73,6 @@ class PathFollower:
 
         # Record where the robot actually ended up (odometry), not the ideal waypoint.
         end_x, end_y, _ = self.drivebase.getPose()
-        self.x, self.y = end_x, end_y
         print("Reached (%.3f, %.3f) m | error to waypoint: %.3f m" % (
             end_x, end_y, math.sqrt((target_x - end_x)**2 + (target_y - end_y)**2)))
 
