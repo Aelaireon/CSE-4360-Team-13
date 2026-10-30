@@ -3,12 +3,14 @@ import math
 import threading
 
 from pybricks.ev3devices import GyroSensor, Motor
-from pybricks.parameters import Direction, Port
+from pybricks.parameters import Direction, Port, Stop
 from pybricks.tools import StopWatch, wait
 from low_level_control.pid import PID
+# from pid import PID
 
 class DifferentialDrive:
-    def __init__(self, x, y, theta, maxMotorSpeed=40, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
+    # def __init__(self, x, y, theta, maxMotorSpeed=30, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
+    def __init__(self, x, y, theta, maxMotorSpeed=30, wheelDiameter=29.7, axleTrack=119.0, leftMotorPort=Port.A, rightMotorPort=Port.D):
         """
         Creates a two-wheeled differential robot controller.
         
@@ -36,8 +38,8 @@ class DifferentialDrive:
         # Turn on spot feature
         self.enableTurnOnSpot = True
         self.isTurningOnSpot = False
-        self.turnOnSpotThreshold = math.radians(10)
-        self.stopTurnOnSpotThreshold = math.radians(8)
+        self.turnOnSpotThreshold = math.radians(30)
+        self.stopTurnOnSpotThreshold = math.radians(30)
         
         # Robot physical parameters
         self.mass = 0.592 # kg
@@ -53,7 +55,7 @@ class DifferentialDrive:
             outputRange=[-maxMotorSpeed, maxMotorSpeed]
         )
         
-        kp_heading = 100.0
+        kp_heading = 50.0
         # ki_heading = 10.0
         ki_heading = 0.0
         kd_heading = 2 * math.sqrt(self.mass * kp_heading)
@@ -76,8 +78,7 @@ class DifferentialDrive:
         self.configureSensors()
         self.configureMotors()
         
-        # Start threads (odometryLoop keeps running until shutdown() clears this flag)
-        self.running = True
+        # Start threads
         self.odometryThread = threading.Thread(target=self.odometryLoop)
         self.odometryThread.start()
         self.logger = threading.Thread(target=self.loggerLoop)
@@ -97,7 +98,7 @@ class DifferentialDrive:
     def odometryLoop(self):
         prevLeftMotorRotation = 0.0
         prevRightMotorRotation = 0.0
-        while self.running:
+        while True:
             # Get the current motor rotations
             leftMotorRotation = self.leftMotor.angle() # in degrees
             rightMotorRotation = self.rightMotor.angle() # in degrees
@@ -112,13 +113,13 @@ class DifferentialDrive:
             
             # Update odometry based on motor rotations
             self.odometryUpdate(deltaLeftMotorRotation, deltaRightMotorRotation)
-            
-            wait(10) # yield 10ms so this thread doesnt busy-loop and potentially starve the control loop
         
     def odometryUpdate(self, leftMotorRotation, rightMotorRotation):
         # Calculate the distance each wheel has traveled
         leftDistance = (leftMotorRotation / 360.0) * self.wheelCircumference
         rightDistance = (rightMotorRotation / 360.0) * self.wheelCircumference
+        
+        leftDistance *= 0.998
         
         # Calculate the change in position and heading
         deltaDistance = (leftDistance + rightDistance) / 2.0
@@ -138,9 +139,6 @@ class DifferentialDrive:
     def configureMotors(self):
         self.leftMotor = Motor(self.leftMotorPort, positive_direction=Direction.CLOCKWISE) # only way to get forward to be positive
         self.rightMotor = Motor(self.rightMotorPort, positive_direction=Direction.CLOCKWISE)
-        # i believe this is already implicitly done, but explicitly resetting the angles anyways
-        self.leftMotor.reset_angle(0)
-        self.rightMotor.reset_angle(0)
 
     def drive(self, distance, heading):
         """
@@ -151,10 +149,6 @@ class DifferentialDrive:
         """
         targetX = self.x + distance * math.cos(heading)
         targetY = self.y + distance * math.sin(heading)
-        
-        # Starts each move from clean PID state (stale prevError/integral from the previous move would otherwise leak in)
-        self.positionPID.reset()
-        self.headingPID.reset()
         
         prevTime = -0.0001
         while math.sqrt((targetX - self.x) ** 2 + (targetY - self.y) ** 2) > 0.01: # Continue until within 1 cm of target
@@ -202,11 +196,14 @@ class DifferentialDrive:
         self.stop()
     
     def rampRateControl(self, leftSpeed, rightSpeed, rampLeftSpeed, rampRightSpeed):
-        leftIncrement = self.limit(leftSpeed - rampLeftSpeed, self.maxMotorSpeed / 10)
+        leftIncrement = self.limit(leftSpeed - rampLeftSpeed, self.maxMotorSpeed / 15)
         rampLeftSpeed += leftIncrement
         
-        rightIncrement = self.limit(rightSpeed - rampRightSpeed, self.maxMotorSpeed / 10)
+        rightIncrement = self.limit(rightSpeed - rampRightSpeed, self.maxMotorSpeed / 15)
         rampRightSpeed += rightIncrement
+        if self.enableTurnOnSpot and self.isTurningOnSpot:
+            rampLeftSpeed = self.limit(rampLeftSpeed, self.maxMotorSpeed * 0.65)
+            rampRightSpeed = self.limit(rampRightSpeed, self.maxMotorSpeed * 0.65)
         return rampLeftSpeed, rampRightSpeed
     
     def limit(self, value, limit):
@@ -229,42 +226,34 @@ class DifferentialDrive:
     def stop(self):
         self.leftMotor.dc(0) # Stop left motor
         self.rightMotor.dc(0) # Stop right motor
-        # keep the ramp state in sync with the stopped motors so the next drive() ramps up from 0
-        self.rampLeftSpeed = 0.0
-        self.rampRightSpeed = 0.0
-
-    def shutdown(self):
-        """
-        Stops the motors and ends the odometry thread so the program can exit.
-        Without this the program never terminates.
-        """
-        self.running = False
-        self.stop()
 
 if __name__ == "__main__":
     drivebase = DifferentialDrive(x=0, y=0, theta=0)
     tile = 0.3048 # 1 foot in meters
     
+    drivebase.drive(tile, math.radians(-90))
+    drivebase.drive(tile, math.radians(-90))
+    
     # Bottom right square
-    drivebase.drive(tile, math.radians(-90))
-    drivebase.drive(tile, math.radians(-180))
-    drivebase.drive(tile, math.radians(-270))
-    drivebase.drive(tile, math.radians(-360))
+    # drivebase.drive(tile, math.radians(-90))x
+    # drivebase.drive(tile, math.radians(-180))
+    # drivebase.drive(tile, math.radians(-270))
+    # drivebase.drive(tile, math.radians(-360))
     
-    # Bottom left square
-    drivebase.drive(tile, math.radians(90))
-    drivebase.drive(tile, math.radians(180))
-    drivebase.drive(tile, math.radians(270))
-    drivebase.drive(tile, math.radians(360))
+    # # Bottom left square
+    # drivebase.drive(tile, math.radians(90))
+    # drivebase.drive(tile, math.radians(180))
+    # drivebase.drive(tile, math.radians(270))
+    # drivebase.drive(tile, math.radians(360))
     
-    # Top left square
-    drivebase.drive(tile, math.radians(0))
-    drivebase.drive(tile, math.radians(90))
-    drivebase.drive(tile, math.radians(180))
-    drivebase.drive(tile, math.radians(270))
+    # # Top left square
+    # drivebase.drive(tile, math.radians(0))
+    # drivebase.drive(tile, math.radians(90))
+    # drivebase.drive(tile, math.radians(180))
+    # drivebase.drive(tile, math.radians(270))
     
-    # Top right square
-    drivebase.drive(tile, math.radians(-0))
-    drivebase.drive(tile, math.radians(-90))
-    drivebase.drive(tile, math.radians(-180))
-    drivebase.drive(tile, math.radians(-270))
+    # # Top right square
+    # drivebase.drive(tile, math.radians(-0))
+    # drivebase.drive(tile, math.radians(-90))
+    # drivebase.drive(tile, math.radians(-180))
+    # drivebase.drive(tile, math.radians(-270))
