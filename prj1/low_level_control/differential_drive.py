@@ -6,9 +6,11 @@ from pybricks.ev3devices import GyroSensor, Motor
 from pybricks.parameters import Direction, Port, Stop
 from pybricks.tools import StopWatch, wait
 from low_level_control.pid import PID
+# from pid import PID
 
 class DifferentialDrive:
-    def __init__(self, x, y, theta, maxMotorSpeed=40, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
+    # def __init__(self, x, y, theta, maxMotorSpeed=30, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
+    def __init__(self, x, y, theta, maxMotorSpeed=30, wheelDiameter=29.7, axleTrack=119.0, leftMotorPort=Port.A, rightMotorPort=Port.D):
         """
         Creates a two-wheeled differential robot controller.
         
@@ -36,8 +38,8 @@ class DifferentialDrive:
         # Turn on spot feature
         self.enableTurnOnSpot = True
         self.isTurningOnSpot = False
-        self.turnOnSpotThreshold = math.radians(10)
-        self.stopTurnOnSpotThreshold = math.radians(8)
+        self.turnOnSpotThreshold = math.radians(30)
+        self.stopTurnOnSpotThreshold = math.radians(30)
         
         # Robot physical parameters
         self.mass = 0.592 # kg
@@ -53,7 +55,7 @@ class DifferentialDrive:
             outputRange=[-maxMotorSpeed, maxMotorSpeed]
         )
         
-        kp_heading = 100.0
+        kp_heading = 50.0
         # ki_heading = 10.0
         ki_heading = 0.0
         kd_heading = 2 * math.sqrt(self.mass * kp_heading)
@@ -116,6 +118,8 @@ class DifferentialDrive:
         # Calculate the distance each wheel has traveled
         leftDistance = (leftMotorRotation / 360.0) * self.wheelCircumference
         rightDistance = (rightMotorRotation / 360.0) * self.wheelCircumference
+        
+        leftDistance *= 0.998
         
         # Calculate the change in position and heading
         deltaDistance = (leftDistance + rightDistance) / 2.0
@@ -192,11 +196,14 @@ class DifferentialDrive:
         self.stop()
     
     def rampRateControl(self, leftSpeed, rightSpeed, rampLeftSpeed, rampRightSpeed):
-        leftIncrement = self.limit(leftSpeed - rampLeftSpeed, self.maxMotorSpeed / 10)
+        leftIncrement = self.limit(leftSpeed - rampLeftSpeed, self.maxMotorSpeed / 15)
         rampLeftSpeed += leftIncrement
         
-        rightIncrement = self.limit(rightSpeed - rampRightSpeed, self.maxMotorSpeed / 10)
+        rightIncrement = self.limit(rightSpeed - rampRightSpeed, self.maxMotorSpeed / 15)
         rampRightSpeed += rightIncrement
+        if self.enableTurnOnSpot and self.isTurningOnSpot:
+            rampLeftSpeed = self.limit(rampLeftSpeed, self.maxMotorSpeed * 0.65)
+            rampRightSpeed = self.limit(rampRightSpeed, self.maxMotorSpeed * 0.65)
         return rampLeftSpeed, rampRightSpeed
     
     def limit(self, value, limit):
@@ -224,26 +231,29 @@ if __name__ == "__main__":
     drivebase = DifferentialDrive(x=0, y=0, theta=0)
     tile = 0.3048 # 1 foot in meters
     
+    drivebase.drive(tile, math.radians(-90))
+    drivebase.drive(tile, math.radians(-90))
+    
     # Bottom right square
-    drivebase.drive(tile, math.radians(-90))
-    drivebase.drive(tile, math.radians(-180))
-    drivebase.drive(tile, math.radians(-270))
-    drivebase.drive(tile, math.radians(-360))
+    # drivebase.drive(tile, math.radians(-90))x
+    # drivebase.drive(tile, math.radians(-180))
+    # drivebase.drive(tile, math.radians(-270))
+    # drivebase.drive(tile, math.radians(-360))
     
-    # Bottom left square
-    drivebase.drive(tile, math.radians(90))
-    drivebase.drive(tile, math.radians(180))
-    drivebase.drive(tile, math.radians(270))
-    drivebase.drive(tile, math.radians(360))
+    # # Bottom left square
+    # drivebase.drive(tile, math.radians(90))
+    # drivebase.drive(tile, math.radians(180))
+    # drivebase.drive(tile, math.radians(270))
+    # drivebase.drive(tile, math.radians(360))
     
-    # Top left square
-    drivebase.drive(tile, math.radians(0))
-    drivebase.drive(tile, math.radians(90))
-    drivebase.drive(tile, math.radians(180))
-    drivebase.drive(tile, math.radians(270))
+    # # Top left square
+    # drivebase.drive(tile, math.radians(0))
+    # drivebase.drive(tile, math.radians(90))
+    # drivebase.drive(tile, math.radians(180))
+    # drivebase.drive(tile, math.radians(270))
     
-    # Top right square
-    drivebase.drive(tile, math.radians(-0))
-    drivebase.drive(tile, math.radians(-90))
-    drivebase.drive(tile, math.radians(-180))
-    drivebase.drive(tile, math.radians(-270))
+    # # Top right square
+    # drivebase.drive(tile, math.radians(-0))
+    # drivebase.drive(tile, math.radians(-90))
+    # drivebase.drive(tile, math.radians(-180))
+    # drivebase.drive(tile, math.radians(-270))

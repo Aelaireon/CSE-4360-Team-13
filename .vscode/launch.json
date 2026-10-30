@@ -8,7 +8,8 @@
 			"name": "Download and Run",
 			"type": "ev3devBrowser",
 			"request": "launch",
-			"program": "/home/robot/${workspaceRootFolderName}/${relativeFile}",
+			// "program": "/home/robot/${workspaceRootFolderName}/${relativeFile}",
+			"program": "/home/robot/${workspaceRootFolderName}/prj1/main.py",
 			"interactiveTerminal": false
 		}
 	]

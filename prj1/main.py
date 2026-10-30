@@ -115,3 +115,5 @@ if shortest_path:
     follower = PathFollower(start_world[0], start_world[1], drivebase)
     print("Following path:", path_waypoints)
     follower.follow_path(path_waypoints)
+    print("Goal Reached!", drivebase.x, drivebase.y, math.degrees(drivebase.theta))
+    ev3.speaker.beep()
