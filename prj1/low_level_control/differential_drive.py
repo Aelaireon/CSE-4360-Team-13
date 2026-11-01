@@ -38,8 +38,8 @@ class DifferentialDrive:
         # Turn on spot feature
         self.enableTurnOnSpot = True
         self.isTurningOnSpot = False
-        self.turnOnSpotThreshold = math.radians(30)
-        self.stopTurnOnSpotThreshold = math.radians(30)
+        self.turnOnSpotThreshold = math.radians(10)
+        self.stopTurnOnSpotThreshold = math.radians(8)
         
         # Robot physical parameters
         self.mass = 0.592 # kg
@@ -55,7 +55,8 @@ class DifferentialDrive:
             outputRange=[-maxMotorSpeed, maxMotorSpeed]
         )
         
-        kp_heading = 50.0
+        # 50 -> 70
+        kp_heading = 70.0
         # ki_heading = 10.0
         ki_heading = 0.0
         kd_heading = 2 * math.sqrt(self.mass * kp_heading)

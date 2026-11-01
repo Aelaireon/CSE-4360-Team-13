@@ -94,9 +94,6 @@ if __name__ == "__main__":
     start_x, start_y = 0.305, 1.219  # meters
     drivebase = DifferentialDrive(x=start_x, y=start_y, theta=0)
     follower = PathFollower(start_x, start_y, drivebase)
-    try:
-        # up one tile (+y), then right one tile (+x)
-        follower.follow_path([(0.305, 1.524), (0.610, 1.524)])
-    finally:
-        drivebase.shutdown()
+    # up one tile (+y), then right one tile (+x)
+    follower.follow_path([(0.305, 1.524), (0.610, 1.524)])
     print("done")
