@@ -10,7 +10,9 @@ from low_level_control.pid import PID
 
 class DifferentialDrive:
     # def __init__(self, x, y, theta, maxMotorSpeed=30, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
+
     def __init__(self, x, y, theta, maxMotorSpeed=30, wheelDiameter=29.7, axleTrack=119.0, leftMotorPort=Port.A, rightMotorPort=Port.D):
+    # def __init__(self, x, y, theta, maxMotorSpeed=30, wheelDiameter=30.44, axleTrack=122.84, leftMotorPort=Port.A, rightMotorPort=Port.D):
         """
         Creates a two-wheeled differential robot controller.
         
@@ -38,8 +40,8 @@ class DifferentialDrive:
         # Turn on spot feature
         self.enableTurnOnSpot = True
         self.isTurningOnSpot = False
-        self.turnOnSpotThreshold = math.radians(10)
-        self.stopTurnOnSpotThreshold = math.radians(8)
+        self.turnOnSpotThreshold = math.radians(30)
+        self.stopTurnOnSpotThreshold = math.radians(30)
         
         # Robot physical parameters
         self.mass = 0.592 # kg
@@ -55,8 +57,7 @@ class DifferentialDrive:
             outputRange=[-maxMotorSpeed, maxMotorSpeed]
         )
         
-        # 50 -> 70
-        kp_heading = 70.0
+        kp_heading = 50.0
         # ki_heading = 10.0
         ki_heading = 0.0
         kd_heading = 2 * math.sqrt(self.mass * kp_heading)
@@ -231,9 +232,22 @@ class DifferentialDrive:
 if __name__ == "__main__":
     drivebase = DifferentialDrive(x=0, y=0, theta=0)
     tile = 0.3048 # 1 foot in meters
+    """
+    # Target: Spin 4 full rotations (4 * 360 = 1440 degrees of robot heading)
+    target_rotations = 4
     
-    drivebase.drive(tile, math.radians(-90))
-    drivebase.drive(tile, math.radians(-90))
+    # Calculate required motor angle based on current geometry
+    # Wheel degrees = Robot Degrees * (AxleTrack / WheelDiameter)
+    current_axle_track_mm = 123  # Updated to your new value
+    current_wheel_mm = 30.44
+    motor_degrees = target_rotations * 360.0 * (current_axle_track_mm / current_wheel_mm)
+        
+    # Turn left and right motors in opposite directions at 200 deg/s
+    speed = 200  # deg/s
+    drivebase.leftMotor.run_angle(speed, -motor_degrees, wait=False)
+    drivebase.rightMotor.run_angle(speed, motor_degrees, wait=True)
+    """
+    drivebase.drive(10*tile, math.radians(0))
     
     # Bottom right square
     # drivebase.drive(tile, math.radians(-90))x
