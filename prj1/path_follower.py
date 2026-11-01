@@ -72,9 +72,9 @@ class PathFollower:
         self.drivebase.drive(distance, target_heading_rad)
 
         # Record where the robot actually ended up (odometry), not the ideal waypoint.
-        end_x, end_y, _ = self.drivebase.getPose()
-        print("Reached (%.3f, %.3f) m | error to waypoint: %.3f m" % (
-            end_x, end_y, math.sqrt((target_x - end_x)**2 + (target_y - end_y)**2)))
+        end_x, end_y, end_theta = self.drivebase.getPose()
+        print("Reached (%.3f, %.3f) m | heading: %.1f deg | error to waypoint: %.3f m"  
+            % (end_x, end_y, math.degrees((end_theta + math.pi) % (2 * math.pi) - math.pi), math.sqrt((target_x - end_x)**2 + (target_y - end_y)**2)))
 
     def follow_path(self, waypoints):
         """
