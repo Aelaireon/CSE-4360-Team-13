@@ -22,6 +22,7 @@ from path_follower import PathFollower
 from path_finder import find_waypoints, to_cell, format_map
 import math
 
+
 start = (0.305, 1.219)
 # goal = (3.658, 1.829)
 goal = (3.658, 0.305)
@@ -69,6 +70,7 @@ def main():
     distance_y = goal[1] - y
     distance = math.sqrt(distance_x**2 + distance_y**2)
     if distance <= 0.305:  # inside the goal circle (radius 0.305 m)
+        ev3.speaker.beep(500, 200)
         print("Goal reached")
     else:
         print("Goal not reached, pose: (%.3f, %.3f)" % (x, y))
