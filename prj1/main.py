@@ -23,7 +23,9 @@ from path_finder import find_waypoints, to_cell, format_map
 import math
 
 start = (0.305, 1.219)
-goal = (3.658, 1.829)
+# goal = (3.658, 1.829)
+goal = (3.658, 0.305)
+
 obstacle = [
     (0.610, 2.743),
     (0.915, 2.743),
@@ -39,7 +41,7 @@ obstacle = [
     (3.048, 2.743),
     (3.353, 2.743),
 
-    # charger on ground (AVOID!)
+    # outlet on ground (AVOID!)
     (1.525, 1.219),
     (1.525, 1.524)
 ]
