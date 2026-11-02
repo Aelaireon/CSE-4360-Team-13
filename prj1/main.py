@@ -48,22 +48,6 @@ obstacle = [
 
 
 def main():
-    # -------------------------------------------------------------------------
-    # STEP 1 - PLAN FIRST, BEFORE ANY HARDWARE IS STARTED          [PROPOSED]
-    # -------------------------------------------------------------------------
-    # DifferentialDrive.__init__ starts the odometry thread and configures the
-    # motors, so a planning failure should happen before that.
-    #
-    #   waypoints, grid, cells = find_waypoints(start, goal, obstacle)   # waypoints is None if no path
-    #   if waypoints is None:
-    #       print("No path found")
-    #       ev3.speaker.beep()          # optional
-    #       return
-    #   print("Waypoints:", waypoints)
-
-    # -------------------------------------------------------------------------
-    # STEP 2 - INITIALIZE HARDWARE AND CONTROLLERS                 [EXISTING]
-    # -------------------------------------------------------------------------
     ev3 = EV3Brick()
     drivebase = DifferentialDrive(x=start[0], y=start[1], theta=0)
     follower = PathFollower(start[0], start[1], drivebase)
