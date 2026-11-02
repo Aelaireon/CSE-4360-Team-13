@@ -2,12 +2,11 @@
 import heapq
 
 # Grid conventions (shared with the rest of the project):
-#   - Planning grid is grid[ix][iy] with ix = 0..GRID_X_CELLS (x) and iy = 0..GRID_Y_CELLS (y).
-#     Neighboring grid points are CELL_M apart: every tile is split into 4 quadrants
-#     (CELLS_PER_TILE = 2), so start/goal/obstacle centers (tile intersections) land exactly on points.
+#   - Planning grid is grid[ix][iy] with ix = 0 ... GRID_X_CELLS (x) and iy = 0 ... GRID_Y_CELLS (y).
+#   - Neighboring grid points are CELL_M apart (CELLS_PER_TILE = 2), so start/goal/obstacle centers (tile intersections) land exactly on points.
 #   - grid values: 0 = free, 1 = obstacle itself, 2 = padding around an obstacle / near a wall.
-#   - Course data (start, goal, obstacle centers) is in METERS; convert() maps it to cells.
-TILE_M = 0.305      # 1 floor tile = 0.305 m (4.88m / 16 = 0.305, 3.05m / 10 = 0.305)
+#   - Course data (start, goal, obstacle centers) is in METERS; convert() maps it to specific cells.
+TILE_M = 0.305      # 1 floor tile = 0.305 m = 1 ft (rounded from 0.3048)
 GRID_X_TILES = 16   # 4.88 m workspace width
 GRID_Y_TILES = 10   # 3.05 m workspace height
 GOAL_RADIUS_TILES = 1  # Goal circle radius is 0.305 m (1 tile)
@@ -15,8 +14,7 @@ CELLS_PER_TILE = 2  # grid points per tile in each direction (2 = tile split int
 CELL_M = TILE_M / CELLS_PER_TILE  # distance between neighboring grid points in meters
 GRID_X_CELLS = GRID_X_TILES * CELLS_PER_TILE  # largest ix (the right wall)
 GRID_Y_CELLS = GRID_Y_TILES * CELLS_PER_TILE  # largest iy (the top wall)
-OBSTACLE_PADDING_CELLS = 1  # extra blocked cells around each obstacle and along the walls (1 cell = CELL_M = half a tile)
-
+OBSTACLE_PADDING_CELLS = 1  # extra blocked CELLS (not tiles) around each obstacle and along the walls
 
 class Node:
     def __init__(self, position, parent=None):
@@ -110,13 +108,13 @@ def astar(grid, start, end):
 
 def to_cell(x_m, y_m):
     """Meters -> (ix, iy) grid cell tuple. Raises ValueError if outside workspace."""
-    # 0.1525
     ix = int(round(x_m / CELL_M))
     iy = int(round(y_m / CELL_M))
     if not (0 <= ix <= GRID_X_CELLS and 0 <= iy <= GRID_Y_CELLS):
         raise ValueError("(%.3f, %.3f) m is outside the %d x %d tile grid" % (x_m, y_m, GRID_X_TILES, GRID_Y_TILES))
     return (ix, iy)
 
+# preprocessing function
 def convert(obstacle, start, end, padding=OBSTACLE_PADDING_CELLS):
     """
     Converts course data from meters to flat integer numbers
@@ -209,7 +207,8 @@ def find_waypoints(start, goal, obstacle):
         corners.append(route[j])
         i = j
 
-    # Convert cells to meter waypoints, skipping the starting cell
+    # post processing formatting for path_follower
+    # convert cells to meter waypoints, skipping the starting cell
     waypoints = [(ix * CELL_M, iy * CELL_M) for (ix, iy) in corners[1:]]
 
     if waypoints:
