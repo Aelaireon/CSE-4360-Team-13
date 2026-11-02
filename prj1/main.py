@@ -22,12 +22,6 @@ from path_follower import PathFollower
 from path_finder import find_waypoints, to_cell, format_map
 import math
 
-# =============================================================================
-# COURSE DATA  (in meters)
-# =============================================================================
-# The instructor's header also has MAX_OBSTACLES = 25 / num_obstacles = 13 and pads
-# the obstacle list with (-1, -1); the padding is omitted here, so len(obstacle)
-# is the real count. The 2026 workspace is 16 x 10 tiles; this data fits in it.
 start = (0.305, 1.219)
 goal = (3.658, 1.829)
 obstacle = [
@@ -44,6 +38,10 @@ obstacle = [
     (2.743, 2.743),
     (3.048, 2.743),
     (3.353, 2.743),
+
+    # charger on ground (AVOID!)
+    (1.525, 1.219),
+    (1.525, 1.524)
 ]
 
 
