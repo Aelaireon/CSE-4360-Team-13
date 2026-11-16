@@ -91,8 +91,6 @@ class DifferentialDrive:
             # Update commands
             print("OnSpotTurn: ", self.isTurningOnSpot, "left: ", self.rampLeftSpeed, "right: ", self.rampRightSpeed)
             print()
-            
-    
 
     def odometryLoop(self):
         prevLeftMotorRotation = 0.0
@@ -141,6 +139,17 @@ class DifferentialDrive:
         # i believe this is already implicitly done, but explicitly resetting the angles anyways
         self.leftMotor.reset_angle(0)
         self.rightMotor.reset_angle(0)
+    
+    def runMotors(self, leftSpeed, rightSpeed):
+        """
+        Drive both wheels with independent speeds [-100.0, +100.0].
+
+        Args:
+            leftSpeed (double): Duty cycle of left wheel [-100.0, +100.0]
+            rightSpeed (double): Duty cycle of right wheel [-100.0, +100.0]
+        """
+        self.leftMotor.dc(leftSpeed)
+        self.rightMotor.dc(rightSpeed)
 
     def drive(self, distance, heading):
         """
