@@ -7,6 +7,10 @@ from pybricks.parameters import Direction, Port
 from pybricks.tools import StopWatch, wait
 from low_level_control.pid import PID
 
+# Drivebase ownership
+EXPLORE = "EXPLORE"
+EXTINGUISH = "EXTINGUISH"
+
 class DifferentialDrive:
     def __init__(self, x, y, theta, maxMotorSpeed=40, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
         """
@@ -73,6 +77,7 @@ class DifferentialDrive:
         self.rightSpeed = 0.0
         self.rampLeftSpeed = 0.0
         self.rampRightSpeed = 0.0
+        self.driveOwner = EXPLORE # who should start with command over the motors
         self.configureSensors()
         self.configureMotors()
         
@@ -93,6 +98,14 @@ class DifferentialDrive:
             print()
 
     def odometryLoop(self):
+        # Ctrl+C (Force quit) wont quit silently with the motors still running.
+        try:
+            self._odometryLoop()
+        except KeyboardInterrupt:
+            self.running = False
+            self.halt()
+
+    def _odometryLoop(self):
         prevLeftMotorRotation = 0.0
         prevRightMotorRotation = 0.0
         while self.running:
@@ -117,6 +130,8 @@ class DifferentialDrive:
         # Calculate the distance each wheel has traveled
         leftDistance = (leftMotorRotation / 360.0) * self.wheelCircumference
         rightDistance = (rightMotorRotation / 360.0) * self.wheelCircumference
+
+        leftDistance *= 0.998
         
         # Calculate the change in position and heading
         deltaDistance = (leftDistance + rightDistance) / 2.0
@@ -140,23 +155,50 @@ class DifferentialDrive:
         self.leftMotor.reset_angle(0)
         self.rightMotor.reset_angle(0)
     
-    def runMotors(self, leftSpeed, rightSpeed):
+    # ownership 
+    def setOwner(self, owner):
+        """
+        the drivebase can belong to ONE "owner" (EXPLORE or EXTINGUISH).
+
+        Stops the motors on every handoff, so the wheels are guaranteed still when the new owner takes over. 
+        halt() also zeroes the ramp state, so a later drive() by the new owner ramps up from a clean state instead of a stale one.
+        Any drive() loop still running for the previous owner returns False on its next pass.
+        """
+        self.driveOwner = owner
+        self.halt()
+
+    def isOwner(self, owner):
+        return self.driveOwner == owner
+
+    # motor commands (all ownership-checked now)
+    def runMotors(self, leftSpeed, rightSpeed, owner=EXPLORE):
         """
         Drive both wheels with independent speeds [-100.0, +100.0].
+        Ignored (returns False) if "owner" is not the current drivebase owner.
 
         Args:
             leftSpeed (double): Duty cycle of left wheel [-100.0, +100.0]
             rightSpeed (double): Duty cycle of right wheel [-100.0, +100.0]
+            owner (str): Who is asking, EXPLORE (default) or EXTINGUISH
         """
+        if owner != self.driveOwner:
+            return False
+        
         self.leftMotor.dc(leftSpeed)
         self.rightMotor.dc(rightSpeed)
+        return True
 
-    def drive(self, distance, heading):
+    def drive(self, distance, heading, owner=EXPLORE):
         """
         Drive the robot at a given distance and heading.
+
+        If ownership moves to someone else, it returns False on the next loop pass without calling stop(). 
+        The motors were already halted by setOwner() at the moment of the handoff.
+        Returns True if the target was reached.
         
         :param distance: Distance to drive in meters.
         :param heading: Heading to maintain in radians.
+        :param owner: Who is asking, EXPLORE (default) or EXTINGUISH
         """
         targetX = self.x + distance * math.cos(heading)
         targetY = self.y + distance * math.sin(heading)
@@ -167,6 +209,11 @@ class DifferentialDrive:
         
         prevTime = -0.0001
         while math.sqrt((targetX - self.x) ** 2 + (targetY - self.y) ** 2) > 0.01: # Continue until within 1 cm of target
+            # lost ownership: bail out immediately, leave the motors alone (the new owner is driving)
+            if owner != self.driveOwner:
+                self.isTurningOnSpot = False # don't leave a stale on-the-spot flag for the next drive()
+                return False
+
             currentTime = self.timer.time()
             dt = currentTime - prevTime
             prevTime = currentTime
@@ -208,7 +255,8 @@ class DifferentialDrive:
             self.rightMotor.dc(self.rampRightSpeed)
             
             wait(10) # Wait for a short duration before the next update
-        self.stop()
+        self.stop(owner)
+        return True
     
     def rampRateControl(self, leftSpeed, rightSpeed, rampLeftSpeed, rampRightSpeed):
         leftIncrement = self.limit(leftSpeed - rampLeftSpeed, self.maxMotorSpeed / 10)
@@ -235,7 +283,15 @@ class DifferentialDrive:
         # return self.gyro.angle() * math.pi / 180 # Convert degrees to radians
         return self.x, self.y, self.theta
 
-    def stop(self):
+    def stop(self, owner=EXPLORE):
+        # stop both motors. Ignored if "owner" is not the current drivebase owner
+        if owner != self.driveOwner:
+            return False
+        self.halt()
+        return True
+
+    def halt(self):
+        # unconditional stop (no ownership check). Used by shutdown() and by stop()
         self.leftMotor.dc(0) # Stop left motor
         self.rightMotor.dc(0) # Stop right motor
         # keep the ramp state in sync with the stopped motors so the next drive() ramps up from 0
@@ -244,36 +300,13 @@ class DifferentialDrive:
 
     def shutdown(self):
         """
-        Stops the motors and ends the odometry thread so the program can exit.
-        Without this the program never terminates.
+        Stops the motors and ends the odometry thread so the program can exit. 
+        Ignores ownership bc only main.py should be calling shutdown.
         """
         self.running = False
-        self.stop()
+        self.halt()
 
 if __name__ == "__main__":
     drivebase = DifferentialDrive(x=0, y=0, theta=0)
     tile = 0.3048 # 1 foot in meters
-    
-    # Bottom right square
-    drivebase.drive(tile, math.radians(-90))
-    drivebase.drive(tile, math.radians(-180))
-    drivebase.drive(tile, math.radians(-270))
-    drivebase.drive(tile, math.radians(-360))
-    
-    # Bottom left square
-    drivebase.drive(tile, math.radians(90))
-    drivebase.drive(tile, math.radians(180))
-    drivebase.drive(tile, math.radians(270))
-    drivebase.drive(tile, math.radians(360))
-    
-    # Top left square
-    drivebase.drive(tile, math.radians(0))
-    drivebase.drive(tile, math.radians(90))
-    drivebase.drive(tile, math.radians(180))
-    drivebase.drive(tile, math.radians(270))
-    
-    # Top right square
-    drivebase.drive(tile, math.radians(-0))
-    drivebase.drive(tile, math.radians(-90))
-    drivebase.drive(tile, math.radians(-180))
-    drivebase.drive(tile, math.radians(-270))
+    drivebase.drive(tile*2, 0)
