@@ -1,3 +1,5 @@
+#!/usr/bin/env pybricks-micropython
+
 import threading
 import time
 import random 
@@ -12,13 +14,13 @@ OPEN_SPACE_MM = 350             # front distance (mm) considered open room space
 TURN_STEP_MS = 250              # duration of a small turn step
 TURN_INTERVAL_MIN_MS = 1400     # minimum ms between gentle heading shifts
 TURN_INTERVAL_MAX_MS = 2800     # maximum ms between gentle heading shifts
-BUMP_BACK_M = 0.05              # meters to back up slightly on a bumper hit
+BUMP_BACK = 0.05                # meters to back up slightly on a bumper hit
 POLL_MS = 20
 
-touchSensor = TouchSensor(Port.S1)
+touchSensor = TouchSensor(Port.S2)
 
-while not touchSensor.is_pressed:
-    pass
+#while not touchSensor.is_pressed:
+#    pass
 
 contact = False
 #(left_motor, right_motor) 
