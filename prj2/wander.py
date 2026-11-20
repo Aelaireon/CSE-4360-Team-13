@@ -1,26 +1,21 @@
 import threading
-import goal_finding as goal
-from low_level_control.differential_drive import DifferentialDrive, EXPLORE, EXTINGUISH, WALL
-from ev3dev2.sensor import INPUT_1 as Input
-from ev3dev2.sensor.lego import TouchSensor as Sensor
+import time
 
-sp = 30
+from low_level_control.differential_drive import DifferentialDrive, WANDER, WALL
+from pybricks.parameters import Port
+from pybricks.ev3devices import TouchSensor, UltrasonicSensor
 
-ts = Sensor(Input)
+SPEED = 30  # duty speed %
 
-while not ts.is_pressed:
+touchSensor = TouchSensor(Port.S1)
+
+while not touchSensor.is_pressed:
     pass
-
-ts.wait_for_pressed()
-print("Pressed!\n")
-
-ts.wait_for_bump()
-print("Pressed and released!\n")
 
 contact = False
 #(left_motor, right_motor) 
 
-class Wandering:
+class WallFollower:
     def __init__(self, drive_base, bumper):
         self.thread = threading.Thread(target=self.loop)
         self.running = False
@@ -28,20 +23,20 @@ class Wandering:
         self.bumper = bumper
 
     def runMotors(self, left, right):
-        self.drive.runMotors(left, right, WALL)
+        self.drive.runMotors(left, right, WANDER)
         
     def loop(self):
         while self.running:
             if contact:
                 self.drive.setOwner(WALL)
             elif(not contact):
-                if(goal.left is True):
-                    self.drive.runMotors(sp,0,EXPLORE) #left
-                elif(goal.forward is True):
-                    self.drive.runMotors(sp,sp,EXPLORE) #forward
-                elif(goal.right is True):
-                    self.drive.runMotors(0,sp,EXPLORE) #right
-                else:
-                    self.drive.runMotors(sp,0,EXPLORE) #left
-                    self.drive.runMotors(sp,sp,EXPLORE) #forward
-                    self.drive.runMotors(0,sp,EXPLORE) #right
+                self.runMotors(SPEED,0) #left
+                self.runMotors(SPEED,SPEED) #forward
+                self.runMotors(0,SPEED) #right
+
+if __name__ == "__main__":
+    while True and time.wait(100):
+        if(touchSensor.pressed()):
+            print("Pressed!\n")
+        else:
+            print("Not Pressed!\n")
