@@ -78,7 +78,7 @@ class DifferentialDrive:
         self.rightSpeed = 0.0
         self.rampLeftSpeed = 0.0
         self.rampRightSpeed = 0.0
-        self.driveOwner = WALL_FOLLOWER # who should start with command over the motors
+        self.driveOwner = WALL # who should start with command over the motors
         self.configureSensors()
         self.configureMotors()
         
@@ -172,7 +172,7 @@ class DifferentialDrive:
         return self.driveOwner == owner
 
     # motor commands (all ownership-checked now)
-    def runMotors(self, leftSpeed, rightSpeed, owner=WALL_FOLLOWER):
+    def runMotors(self, leftSpeed, rightSpeed, owner=WALL):
         """
         Drive both wheels with independent speeds [-100.0, +100.0].
         Ignored (returns False) if "owner" is not the current drivebase owner.
@@ -189,7 +189,7 @@ class DifferentialDrive:
         self.rightMotor.dc(rightSpeed)
         return True
 
-    def drive(self, distance, heading, owner=WALL_FOLLOWER):
+    def drive(self, distance, heading, owner=WALL):
         """
         Drive the robot at a given distance and heading.
 
@@ -284,7 +284,7 @@ class DifferentialDrive:
         # return self.gyro.angle() * math.pi / 180 # Convert degrees to radians
         return self.x, self.y, self.theta
 
-    def stop(self, owner=WALL_FOLLOWER):
+    def stop(self, owner=WALL):
         # stop both motors. Ignored if "owner" is not the current drivebase owner
         if owner != self.driveOwner:
             return False
