@@ -4,15 +4,14 @@ goal_finding.py - fire detection (background thread) and the extinguish sequence
 
 THREADS
 1. color monitor thread     FireDetector.run()   
-    - reads the floor reflection, sets fireFound
+    - reads the floor reflection, sets onPad / fireFound
     - ALWAYS RUNNING
     - Never touches the motors
 
 2. extinguish thread        GoalFinding.loop()   
-waits for fireFound
+    - waits for fireFound
     - takes drivebase ownership
-    - runs the "extinguish" sequence
-    - hands ownership back if it fails.
+    - runs the sequence below, once
 
 DRIVEBASE OWNERSHIP (NEW in `low_level_control/differential_drive.py`)
 drivebase.driveOwner is EXPLORE or EXTINGUISH. Only the current owner's commands can interact with the motors. 
@@ -23,25 +22,19 @@ If you're not the owner -> drive() / runMotors() / stop() is ignored and returns
         if not drivebase.drive(d, h):
             while drivebase.driveOwner != EXPLORE and not goal.finished:
                 wait(20)
-  - After the fire is handled, ownership stays EXTINGUISH and goal.finished is True. Exploring
-    loops should end on goal.finished so the program can exit safely.
-  - If the sequence gives up (the black pad was not confirmed after stopping)
-        - fireFound goes back to False
-        - ownership returns to EXPLORE
-        - exploring resumes
+  - Once the fire sequence starts, ownership never goes back: it stays EXTINGUISH and goal.finished
+    becomes True at the end. Exploring loops should end on goal.finished so the program can exit safely.
 
-SEQUENCE (the extinguish thread)
-0. TAKE OVER: ownership goes to EXTINGUISH and the robot STOPS IMMEDIATELY
-1. CONFIRM: after settling, the black pad must show again within ON_PAD_CONFIRM_MS. If not, it was likely a stray reading
-    - give up and hand control back.
+SEQUENCE
+0. The color monitor reads the floor reflection every POLL_MS and decides `onPad`.
+1. onPad is True CONFIRM_COUNT times in a row -> fireFound. The extinguish thread:
+    - takes drivebase ownership (the wheels stop)
+    - plays the initial beep
 2. CENTER: spin CW until the color sensor runs off the pad, then CCW across the pad until it runs off the other side.
     - The ultrasonic is logged (heading, distance) during the CCW pass.
     - Turn toward the nearest object (the candle holder) within MAX_CANDLE_RANGE_MM if the ultrasonic saw one
     - If it didn't, turn to the middle of the two pad edges.
-3. POSITION: drive forward/backward until the median ultrasonic reading is within DISTANCE_TOLERANCE_MM of TARGET_DISTANCE_MM. 
-    - A bump = touched the holder: back off and re-measure. After MAX_BUMPS it just stays where it is.
-4. RE-CENTER: a second, narrower scan from the final distance for a better fan aim.
-5. ALARM beeps, then the optional fan.
+3. FINISH: final beeps, then the optional fan.
 """
 
 import math
@@ -60,47 +53,31 @@ CONFIRM_COUNT = 3           # consecutive dark readings before fireFound latches
                             # the pad/line gap is wide, so this can stay short. Raise it if lines ever trigger it
 POLL_MS = 20
 
-# step 1: confirm
-SETTLE_MS = 100             # pause after each stop so readings are stable
-ON_PAD_CONFIRM_MS = 300     # the black pad must be seen within this window after stopping
+# step 1: take over
+SETTLE_MS = 100             # pause after stopping so the wheels and readings are stable
 
-# step 2 & 4: center (ultrasonic scan)
-MAX_PAD_SWEEP_DEG = 120     # step 2: safety limit for the CW spin if the color sensor never runs off the pad
+# step 2: center (find the pad's edges, then the candle between them)
+MAX_PAD_SWEEP_DEG = 120     # safety limit for the CW spin if the color sensor never runs off the pad
                             # (the CCW spin back across the pad gets twice this)
-OFF_PAD_MS = 60             # step 2: color sensor must read "not the pad" this long to count as run off the pad
-RECENTER_HALF_ANGLE_DEG = 20   # second, narrower sweep after positioning
-RECENTER = True             # can make it false w/o removing the need to remove the code in case the second scan is too slow or unnecessary
+OFF_PAD_MS = 60             # color sensor must read "not the pad" this long to count as run off the pad
 SCAN_SPIN_SPEED = 12        # duty cycle %, slow so enough samples are taken. TODO: may stall if too low, tune
-SCAN_TIMEOUT_MS = 8000
-MIN_SCAN_SAMPLES = 8        # fewer samples than this = scan failed, keep heading
+SCAN_TIMEOUT_MS = 8000      # per spin
+MIN_SCAN_SAMPLES = 8        # fewer samples than this = scan failed, aim at the middle of the pad instead
 MAX_CANDLE_RANGE_MM = 200   # nearest reading must be at least this close to count as a candle (untested starting value)
 CLUSTER_TOL_MM = 25         # readings within this of the minimum belong to the candle cluster
-
-# step 3: position/move
-TARGET_DISTANCE_MM = 80     # ultrasonic-to-candle distance to stop at. TODO: tune
-                            # sensor can't read accurately below about 30 mm
-DISTANCE_TOLERANCE_MM = 15
-POSITION_SPEED = 15         # duty cycle %, slow (also used for reversing)
-MAX_POSITION_TRAVEL = 0.15  # cant drive farther than this while positioning
-FILTER_N = 3                # median of the last N ultrasonic readings
-BACKOFF_DISTANCE = 0.02     # m to reverse after touching the candle holder
-MAX_BUMPS = 3
-
-# shared spin helper 
-SPIN_SPEED = 20
+SPIN_SPEED = 20             # duty cycle %, the turn to the final heading
 SPIN_TOLERANCE = math.radians(3)
 SPIN_TIMEOUT_MS = 4000
+DEBUG_PRINT = False         # True: print the pad edges and every scan sample (the test script turns this on)
 
-# alarm / fan 
+# step 3: alarm / fan
 ALARM_FREQ = 880
 FAN_SECONDS = 6
 FAN_DUTY = 100
 
 
 def wrapAngle(angle):
-    """Wrap to [-pi, pi]."""
     return (angle + math.pi) % (2 * math.pi) - math.pi
-
 
 # FireDetector: color monitor thread, sensing only
 class FireDetector:
@@ -130,10 +107,6 @@ class FireDetector:
                 self.fireFound = True
             wait(POLL_MS)
 
-    def clear(self):
-        # forget that the fire was found (used when the sequence gives up)
-        self.fireFound = False
-
     def stop(self):
         self.running = False
 
@@ -145,8 +118,8 @@ class GoalFinding:
         :param EV3Brick ev3: for the speaker
         :param DifferentialDrive drivebase: shared drivebase (ownership enforced inside it)
         :param FireDetector detector: the running color monitor
-        :param UltrasonicSensor ultrasonic: front-facing, used to find and position on the candle
-        :param TouchSensor bumper: optional, shared with the exploring code
+        :param UltrasonicSensor ultrasonic: front-facing, used to find the candle
+        :param TouchSensor bumper: optional, shared with the exploring code. A bump ends a spin early
         :param Motor fan: optional third motor, skipped if None
         """
         self.ev3 = ev3
@@ -156,7 +129,8 @@ class GoalFinding:
         self.bumper = bumper
         self.fan = fan
 
-        self.finished = False # True = fire handled, every loop should end
+        self.finished = False   # True = sequence done, every loop should end
+        self.candleSeen = False # after the scan: True = ultrasonic saw the candle, False = aimed at the middle of the pad
         self.running = False
         self.thread = None
 
@@ -180,62 +154,36 @@ class GoalFinding:
         self.running = False
 
     def loop(self):
-        # wait for a fire, take ownership, run the sequence, hand ownership back if it fails
+        # wait for a fire, take ownership, run the sequence once
         while self.running:
             if self.detector.fireFound and not self.finished:
                 self.drivebase.setOwner(EXTINGUISH) # halts the wheels; exploring commands are ignored from here on
-                done = self.run() # blocks until finished or gave up
-                if done:
-                    self.finished = True # ownership deliberately stays EXTINGUISH
-                    return
-                self.halt() # make sure the wheels are stopped
-                self.detector.clear() # fireFound = False
-                self.drivebase.setOwner(EXPLORE) # exploring resumes
+                self.run()
+                self.finished = True # ownership deliberately stays EXTINGUISH
+                return
             wait(POLL_MS)
 
     # the full sequence! 
     def run(self):
-        # runs steps 0 to 5. Returns True when done, False if it gave up (pad not confirmed)
-        # 0.
+        # 1. we own the drivebase (the wheels were halted by setOwner). initial cue
         self.halt()
+        self.ev3.speaker.beep(1000, 100)
         wait(SETTLE_MS)
         self.halt() # again: an exploring loop that passed its ownership check just before
                     # setOwner() may have written one last motor command in between
 
-        # 1. confirm the black pad is real
-        if not self.confirmOnPad():
-            return False
-        # temp cue: beep once to indicate the fire is confirmed
-        self.ev3.speaker.beep(1000, 100)
-
         # 2. spin to both pad edges, then face the candle (or the middle of the pad)
-        self.scanPadForCandle()
+        self.candleSeen = self.scanPadForCandle(verbose=DEBUG_PRINT)
 
-        # 3. forward / backward to the target distance
-        self.positionAtDistance()
-
-        # 4. narrower re-center from the final distance. possibly unnecessary.
-        if RECENTER:
-            self.centerOnCandle(RECENTER_HALF_ANGLE_DEG)
-
-        # 5. alarm, then fan
+        # 3. final beeps, then fan
         self.arrive()
         self.extinguish()
-        return True
-
-    def confirmOnPad(self):
-        # the pad must show up again shortly after stopping, otherwise the first reading was a stray
-        timer = StopWatch()
-        while timer.time() < ON_PAD_CONFIRM_MS:
-            if self.detector.onPad:
-                return True
-            wait(10)
-        return False
 
     # step 2: find the pad's edges, then face the candle
     def scanPadForCandle(self, verbose=False):
-        # spin CW until the color sensor runs off the pad, then CCW across the pad until off the pad
-        # If candle seen, turn towards it, otherwise go to the middle of the two pad edges.
+        # spin CW until the color sensor runs off the pad, then CCW across the pad (logging the
+        # ultrasonic) until it runs off the other side. Then turn to the candle if the ultrasonic
+        # saw it in between, otherwise to the middle of the two pad edges.
         # Returns True if the candle was seen, False if it aimed at the middle of the pad.
         _, _, theta0 = self.drivebase.getPose()
         maxAngle = math.radians(MAX_PAD_SWEEP_DEG)
@@ -247,7 +195,7 @@ class GoalFinding:
         target = self.findCandleHeading(samples)
         found = target is not None
         if not found:
-            target = (thetaCW + thetaCCW) / 2.0 # no candle seen -> aim at the middle of the pad
+            target = (thetaCW + thetaCCW) / 2.0 # no candle seen: aim at the middle of the pad
         if verbose:
             print("pad edges at deg:", round(math.degrees(thetaCW - theta0), 1), "(CW) and",
                   round(math.degrees(thetaCCW - theta0), 1), "(CCW)")
@@ -258,9 +206,10 @@ class GoalFinding:
         return found
 
     def spinUntilOffPad(self, direction, maxAngle, samples=None):
-        # spin in place (direction +1 = CCW, -1 = CW) until the color sensor has run off the pad
-        # for OFF_PAD_MS or maxAngle / SCAN_TIMEOUT_MS is hit.
-        # logs heading, ultrasonic mm. Returns the heading it stopped at.
+        # spin in place (direction +1 = CCW, -1 = CW) until the color sensor has run off the pad for
+        # OFF_PAD_MS, or maxAngle / SCAN_TIMEOUT_MS is hit.
+        # If it starts OFF the pad (it just ran off the other side), it first waits to get back ON.
+        # If samples is a list it logs (heading, ultrasonic mm). Returns the heading it stopped at.
         _, _, start = self.drivebase.getPose()
         seenPad = self.detector.onPad
         offTimer = StopWatch()
@@ -281,50 +230,6 @@ class GoalFinding:
         self.halt()
         _, _, theta = self.drivebase.getPose()
         return theta
-
-    # step 4 call (fixed-angle scan around the current heading):
-    def centerOnCandle(self, halfAngleDeg, verbose=False):
-        # best effort. Sweep the ultrasonic +/- halfAngleDeg, find the candle, spin to its middle.
-        # Returns True if a candle was found, False if it fell back to the OG heading.
-        # verbose=True prints every scan sample (used by the test script)
-        _, _, theta0 = self.drivebase.getPose()
-        half = math.radians(halfAngleDeg)
-
-        self.spinTo(theta0 - half) # go to one end of the sweep
-        samples = self.sweep(theta0 + half)  # sweep to the other end, logging ultrasonic values
-        target = self.findCandleHeading(samples)
-        found = target is not None
-        if verbose:
-            self.printScan(samples, theta0, target)
-        if not found:
-            target = theta0 # scan failed: face the OG heading
-        self.spinTo(target)
-        wait(SETTLE_MS)
-        return found
-
-    def printScan(self, samples, theta0, target):
-        # debug print: every sample as (degrees from the heading the scan started at, mm)
-        print("scan samples:", len(samples))
-        for theta, mm in samples:
-            print("  deg:", round(math.degrees(theta - theta0), 1), " mm:", mm)
-        if target is None:
-            print("no candle found in the scan")
-        else:
-            print("candle middle at deg:", round(math.degrees(target - theta0), 1))
-
-    def sweep(self, endTheta):
-        # spin CCW (heading increases) to endTheta, returning [(theta, distance_mm), ...]
-        samples = []
-        timer = StopWatch()
-        while timer.time() < SCAN_TIMEOUT_MS:
-            _, _, theta = self.drivebase.getPose() # theta accumulates, it is not wrapped
-            if theta >= endTheta or self.bumped():
-                break
-            self.motors(-SCAN_SPIN_SPEED, SCAN_SPIN_SPEED)
-            samples.append((theta, self.ultrasonic.distance()))
-            wait(10)
-        self.halt()
-        return samples
 
     def findCandleHeading(self, samples):
         """
@@ -358,62 +263,15 @@ class GoalFinding:
             hi += 1
         return (samples[lo][0] + samples[hi][0]) / 2.0
 
-    # step 3: position at the target distance 
-    def positionAtDistance(self):
-        """
-        Drive forward or backward until the median ultrasonic reading is within DISTANCE_TOLERANCE_MM of TARGET_DISTANCE_MM. 
-        Best effort: also stops where it is if the travel cap is hit or MAX_BUMPS bumps happen.
-        """
-        x0, y0, _ = self.drivebase.getPose()
-        recent = []
-        bumps = 0
-
-        while True:
-            if self.bumped():
-                self.halt()
-                bumps += 1
-                if bumps > MAX_BUMPS:
-                    return
-                self.backOff() # touched the holder (or a wall): back off, re-measure
-                recent = []
-                continue
-
-            recent.append(self.ultrasonic.distance())
-            if len(recent) > FILTER_N:
-                recent.pop(0)
-            if len(recent) < FILTER_N:
-                wait(10)
-                continue
-
-            distance = sorted(recent)[FILTER_N // 2]
-            error = distance - TARGET_DISTANCE_MM
-            if abs(error) <= DISTANCE_TOLERANCE_MM:
-                self.halt()
-                return
-
-            x, y, _ = self.drivebase.getPose()
-            dx = x - x0
-            dy = y - y0
-            if math.sqrt(dx * dx + dy * dy) >= MAX_POSITION_TRAVEL:
-                self.halt() # best effort: we are as close as the cap allows
-                return
-
-            speed = POSITION_SPEED if error > 0 else -POSITION_SPEED # too far: forward, too close: back
-            self.motors(speed, speed)
-            wait(10)
-
-    def backOff(self):
-        x0, y0, _ = self.drivebase.getPose()
-        timer = StopWatch()
-        while timer.time() < 1500:
-            x, y, _ = self.drivebase.getPose()
-            dx = x - x0
-            dy = y - y0
-            if math.sqrt(dx * dx + dy * dy) >= BACKOFF_DISTANCE:
-                break
-            self.motors(-POSITION_SPEED, -POSITION_SPEED)
-            wait(10)
-        self.halt()
+    def printScan(self, samples, theta0, target):
+        # debug print: every sample as (degrees from the heading the scan started at, mm)
+        print("scan samples:", len(samples))
+        for theta, mm in samples:
+            print("  deg:", round(math.degrees(theta - theta0), 1), " mm:", mm)
+        if target is None:
+            print("no candle found in the scan")
+        else:
+            print("candle middle at deg:", round(math.degrees(target - theta0), 1))
 
     def spinTo(self, targetTheta):
         # spin in place toward targetTheta. Returns when within SPIN_TOLERANCE or on timeout
@@ -428,9 +286,9 @@ class GoalFinding:
             wait(10)
         self.halt()
 
-    # step 5: alarm and fan
+    # step 3: final beeps and fan
     def arrive(self):
-        # halt, then the one alarm cue
+        # halt, then the final cue
         self.halt()
         for _ in range(3):
             self.ev3.speaker.beep(ALARM_FREQ, 200)
