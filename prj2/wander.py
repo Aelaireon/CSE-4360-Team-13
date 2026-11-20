@@ -1,12 +1,13 @@
 #!/usr/bin/env pybricks-micropython
 
 import threading
-import time
 import random 
 
 from low_level_control.differential_drive import DifferentialDrive, WANDER, WALL
-from pybricks.parameters import Port
+from pybricks.hubs import EV3Brick
+from pybricks.parameters import Port, Button
 from pybricks.ev3devices import TouchSensor, UltrasonicSensor
+from pybricks.tools import wait
 
 SPEED = 30                      # duty speed %
 ULTRASONIC_WALL_MM = 100        # front distance (mm) that counts as approaching a wall/obstacle
@@ -45,8 +46,9 @@ class Wander:
                 self.runMotors(0,SPEED) #right
 
 if __name__ == "__main__":
-    while True and time.wait(100):
+    while True and Button.CENTER not in EV3Brick().buttons.pressed():
         if(touchSensor.pressed()):
-            print("Pressed!\n")
+            print("Pressed!")
         else:
-            print("Not Pressed!\n")
+            print("Not Pressed!")
+        wait(150)
