@@ -9,7 +9,7 @@ from low_level_control.pid import PID
 
 # Drivebase ownership
 WANDER = "WANDER"
-WALL_FOLLOWER  = "WALL_FOLLOWER"
+WALL  = "WALL"
 EXTINGUISH = "EXTINGUISH"
 
 class DifferentialDrive:
