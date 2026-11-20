@@ -10,7 +10,6 @@ from pybricks.parameters import Port, Button
 from pybricks.ev3devices import TouchSensor, UltrasonicSensor
 from pybricks.tools import StopWatch, wait
 
-
 SPEED = 30                      # duty speed %
 FRONT_OBSTACLE = 100            # front distance (mm) that counts as approaching a wall/obstacle
 BUMP_BACK = 0.05                # meters to back up slightly on a bumper hit
@@ -18,11 +17,6 @@ TURN_AWAY = 50              # degrees to turn left (CCW = +theta) after tapping 
 FRONT_TURN = 80             # degrees to turn left (CCW = +theta) if blocked straight ahead
 TIMEOUT_WALL = 15000           # time budget before signaling time to return to wander
 POLL_MS = 20
-
-touchSensor = TouchSensor(Port.S1)
-
-while not touchSensor.is_pressed:
-    pass
 
 contact = False
 #(left_motor, right_motor) 
@@ -67,9 +61,7 @@ class WallFollower:
             self.drive.setOwner(WANDER)
             return False
 
-
-
-        # 2. Front ultrasonic sees an obstacle/wall straight ahead: turn left to clear
+        # 2. ultrasonic sensor senses upcoming wall: turn left to clear
         if self.ultrasonic.distance() <= FRONT_OBSTACLE:
             self.halt()
             _, _, theta = self.drivebase.getPose()
@@ -77,7 +69,7 @@ class WallFollower:
                 return False
             return True
 
-        # 3. Right/front-right bumper tapped the wall: back up slightly and angle left
+        # 3. touch sensor hits wall: back up slightly and angle left
         if self.bumped():
             self.halt()
             _, _, theta = self.drivebase.getPose()
