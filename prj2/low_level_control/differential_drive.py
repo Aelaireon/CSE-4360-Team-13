@@ -8,7 +8,8 @@ from pybricks.tools import StopWatch, wait
 from low_level_control.pid import PID
 
 # Drivebase ownership
-EXPLORE = "EXPLORE"
+WANDER = "WANDER"
+WALL_FOLLOWER  = "WALL_FOLLOWER"
 EXTINGUISH = "EXTINGUISH"
 
 class DifferentialDrive:
@@ -77,7 +78,7 @@ class DifferentialDrive:
         self.rightSpeed = 0.0
         self.rampLeftSpeed = 0.0
         self.rampRightSpeed = 0.0
-        self.driveOwner = EXPLORE # who should start with command over the motors
+        self.driveOwner = WALL_FOLLOWER # who should start with command over the motors
         self.configureSensors()
         self.configureMotors()
         
@@ -158,7 +159,7 @@ class DifferentialDrive:
     # ownership 
     def setOwner(self, owner):
         """
-        the drivebase can belong to ONE "owner" (EXPLORE or EXTINGUISH).
+        the drivebase can belong to ONE "owner"
 
         Stops the motors on every handoff, so the wheels are guaranteed still when the new owner takes over. 
         halt() also zeroes the ramp state, so a later drive() by the new owner ramps up from a clean state instead of a stale one.
@@ -171,7 +172,7 @@ class DifferentialDrive:
         return self.driveOwner == owner
 
     # motor commands (all ownership-checked now)
-    def runMotors(self, leftSpeed, rightSpeed, owner=EXPLORE):
+    def runMotors(self, leftSpeed, rightSpeed, owner=WALL_FOLLOWER):
         """
         Drive both wheels with independent speeds [-100.0, +100.0].
         Ignored (returns False) if "owner" is not the current drivebase owner.
@@ -179,7 +180,7 @@ class DifferentialDrive:
         Args:
             leftSpeed (double): Duty cycle of left wheel [-100.0, +100.0]
             rightSpeed (double): Duty cycle of right wheel [-100.0, +100.0]
-            owner (str): Who is asking, EXPLORE (default) or EXTINGUISH
+            owner (str): Who is asking
         """
         if owner != self.driveOwner:
             return False
@@ -188,7 +189,7 @@ class DifferentialDrive:
         self.rightMotor.dc(rightSpeed)
         return True
 
-    def drive(self, distance, heading, owner=EXPLORE):
+    def drive(self, distance, heading, owner=WALL_FOLLOWER):
         """
         Drive the robot at a given distance and heading.
 
@@ -198,7 +199,7 @@ class DifferentialDrive:
         
         :param distance: Distance to drive in meters.
         :param heading: Heading to maintain in radians.
-        :param owner: Who is asking, EXPLORE (default) or EXTINGUISH
+        :param owner: Who is asking
         """
         targetX = self.x + distance * math.cos(heading)
         targetY = self.y + distance * math.sin(heading)
@@ -283,7 +284,7 @@ class DifferentialDrive:
         # return self.gyro.angle() * math.pi / 180 # Convert degrees to radians
         return self.x, self.y, self.theta
 
-    def stop(self, owner=EXPLORE):
+    def stop(self, owner=WALL_FOLLOWER):
         # stop both motors. Ignored if "owner" is not the current drivebase owner
         if owner != self.driveOwner:
             return False

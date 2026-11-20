@@ -36,7 +36,6 @@ SEQUENCE
     - If it didn't, turn to the middle of the two pad edges.
 3. FINISH: final beeps, then the optional fan.
 """
-
 import math
 import threading
 
@@ -73,7 +72,7 @@ DEBUG_PRINT = False         # True: print the pad edges and every scan sample (t
 # step 3: alarm / fan
 ALARM_FREQ = 880
 FAN_SECONDS = 6
-FAN_DUTY = 100
+FAN_DUTY = 100              # max%
 
 
 def wrapAngle(angle):
@@ -93,8 +92,7 @@ class FireDetector:
         self.thread.start()
 
     def readOnPad(self):
-        # the ONE place that decides what "the pad" looks like. Change only this (and the constants
-        # above) if the pad color changes
+        # the ONE place that decides what "the pad" looks like
         return self.sensor.reflection() <= BLACK_REFLECTION_MAX
 
     def run(self):
@@ -105,7 +103,7 @@ class FireDetector:
 
             if hits >= CONFIRM_COUNT and not self.fireFound:
                 self.fireFound = True
-            wait(POLL_MS)
+            wait(POLL_MS) # 20ms
 
     def stop(self):
         self.running = False
