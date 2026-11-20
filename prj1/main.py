@@ -1,119 +1,83 @@
 #!/usr/bin/env pybricks-micropython
 
 """
-Example LEGO® MINDSTORMS® EV3 Robot Educator Driving Base Program
------------------------------------------------------------------
+CSE 4360 - Project 1: navigate a known obstacle course with the LEGO EV3 robot.
 
-This program requires LEGO® EV3 MicroPython v2.0.
+Requires LEGO(R) EV3 MicroPython v2.0.
 Download: https://education.lego.com/en-us/support/mindstorms-ev3/python-for-ev3
 
-Building instructions can be found at:
-https://education.lego.com/en-us/support/mindstorms-ev3/building-instructions#robot
+Data flow (numbered steps are in main() below):
+    course data (m) -> path_finder -> waypoints (m) -> PathFollower
+        -> DifferentialDrive.drive() -> motors
+    DifferentialDrive.getPose() (odometry) is read back by PathFollower.
+
+Coordinate contract (same in every file): METERS, global frame. Origin is the
+bottom-left corner of the 4.88 x 3.05 m workspace (16 x 10 tiles), +x right,
++y up, heading 0 rad = +x. The robot is placed at `start` facing +x (theta = 0).
 """
 
 from pybricks.hubs import EV3Brick
-from pybricks.ev3devices import Motor
-from pybricks.parameters import Port
 from low_level_control.differential_drive import DifferentialDrive
-from path_finder import PathFinder
+from path_follower import PathFollower
+from path_finder import find_waypoints, to_cell, format_map
 import math
 
 from path_follower import PathFollower
 
-# Initialize the EV3 Brick.
-ev3 = EV3Brick()
 
-# Initialize test values for start, goal, and obstacles
-start_world = (0.305, 1.219)
-goal_world = (3.658, 1.829)
+start = (0.305, 1.219)
+# goal = (3.658, 1.829)
+goal = (3.658, 0.305)
 
-# notice: start[0], start[1]
-drivebase = DifferentialDrive(x=start_world[0], y=start_world[1], theta=0)
-tile = 0.305  # = 1 foot
+obstacle = [
+    (0.610, 2.743),
+    (0.915, 2.743),
+    (1.219, 2.743),
+    (1.829, 1.219),
+    (1.829, 1.524),
+    (1.829, 1.829),
+    (1.829, 2.134),
+    (2.743, 0.305),
+    (2.743, 0.610),
+    (2.743, 0.915),
+    (2.743, 2.743),
+    (3.048, 2.743),
+    (3.353, 2.743),
 
-# The pathfinder uses (row, column), while world coordinates are (x, y).
-start_cell = (round(start_world[1] / tile), round(start_world[0] / tile))
-goal_cell = (round(goal_world[1] / tile), round(goal_world[0] / tile))
-
-map_x = 16
-map_y = 10
-
-# will be given something like:
-MAX_OBSTACLES = 25  # maximum number of obstacles
-num_obstacles = 13  # number of obstacles
-
-# # obstacle locations
-obstacles = [
-    [0.61, 2.743],
-    [0.915, 2.743],
-    [1.219, 2.743],
-    [1.829, 1.219],
-    [1.829, 1.524],
-    [1.829, 1.829],
-    [1.829, 2.134],
-    [2.743, 0.305],
-    [2.743, 0.61],
-    [2.743, 0.915],
-    [2.743, 2.743],
-    [3.048, 2.743],
-    [3.353, 2.743],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
-    [-1, -1],
+    # outlet on ground (AVOID!)
+    (1.525, 1.219),
+    (1.525, 1.524)
 ]
 
-def create_map(obs, max, num, map_x=16, map_y=10):
-    default_maze = [[0 for _ in range(map_x)] for _ in range(map_y)]
 
-    if not obs or num <= 0:
-        return default_maze
+def main():
+    ev3 = EV3Brick()
+    drivebase = DifferentialDrive(x=start[0], y=start[1], theta=0)
+    follower = PathFollower(start[0], start[1], drivebase)
 
-    maze = [[0 for _ in range(map_x)] for _ in range(map_y)]
-    has_valid_obstacle = False
+    waypoints, grid, cells = find_waypoints(start, goal, obstacle)
 
-    for i in range(min(num, max, len(obs))):
-        x, y = obs[i]
-        if x == -1 and y == -1:
-            continue
+    # show the solved path in the console before the robot moves
+    # (# obstacle, + padding, * path, S start, G goal)
+    print(format_map(grid, cells, to_cell(start[0], start[1]), to_cell(goal[0], goal[1])))
+    if waypoints is None:
+        print("No path found")
+        return
+    print("Waypoints (m):", waypoints)
 
-        has_valid_obstacle = True
-        
-        # Otherwise, interpret it as a world-space position and convert to the
-        # tile map using the robot's origin and tile size.
-        col = int(round(x / tile))
-        row = int(round(y / tile))
+    follower.follow_path(waypoints)
 
-        if 0 <= row < map_y and 0 <= col < map_x:
-            maze[row][col] = 1
+    x, y, _ = drivebase.getPose()
+    distance_x = goal[0] - x
+    distance_y = goal[1] - y
+    distance = math.sqrt(distance_x**2 + distance_y**2)
+    if distance <= 0.305:  # inside the goal circle (radius 0.305 m)
+        ev3.speaker.beep(500, 200)
+        print("Goal reached")
+    else:
+        print("Goal not reached, pose: (%.3f, %.3f)" % (x, y))
+        print("trying to go directly to goal as last ditch effort.")
+        follower.navigate_to(goal[0], goal[1])
 
-    return maze if has_valid_obstacle else default_maze
-
-maze = create_map(obstacles, MAX_OBSTACLES, num_obstacles, map_x, map_y)
-
-for row in maze:
-    print(row)
-
-print("Start:", start_cell, "Goal:", goal_cell)
-shortest_path = PathFinder.astar(maze, start_cell, goal_cell)
-print("Path found:", shortest_path)
-
-if shortest_path:
-    path_waypoints = [(col * tile, row * tile) for row, col in shortest_path]
-    # The planner includes the starting cell, but the robot is already there.
-    # Skip the initial waypoint so it does not try to drive to its own position.
-    path_waypoints = path_waypoints[1:]
-
-    follower = PathFollower(start_world[0], start_world[1], drivebase)
-    print("Following path:", path_waypoints)
-    follower.follow_path(path_waypoints)
-    print("Goal Reached!", drivebase.x, drivebase.y, math.degrees(drivebase.theta))
-    ev3.speaker.beep()
+if __name__ == "__main__":
+    main()

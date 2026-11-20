@@ -1,0 +1,313 @@
+#!/usr/bin/env pybricks-micropython
+import math
+import threading
+
+from pybricks.ev3devices import GyroSensor, Motor
+from pybricks.parameters import Direction, Port
+from pybricks.tools import StopWatch, wait
+from low_level_control.pid import PID
+
+# Drivebase ownership
+WANDER = "WANDER"
+WALL  = "WALL"
+EXTINGUISH = "EXTINGUISH"
+
+class DifferentialDrive:
+    def __init__(self, x, y, theta, maxMotorSpeed=40, wheelDiameter=30.37, axleTrack=123.31, leftMotorPort=Port.A, rightMotorPort=Port.D):
+        """
+        Creates a two-wheeled differential robot controller.
+        
+        :param m x: The starting x coordinate
+        :param m y: The starting y coordinate
+        :param rad theta: The starting orientation
+        :param % maxMotorSpeed: The max motor duty cycle in percent
+        :param mm wheelDiameter: Wheel diameter
+        :param mm axleTrack: Distance between the two wheels
+        :param Port leftMotorPort: Left motor port
+        :param Port rightMotorPort: Right motor port
+        """
+        
+        self.x = x # Current x position in meters
+        self.y = y # Current y position in meters
+        self.theta = theta # Current heading in radians
+        
+        self.maxMotorSpeed = maxMotorSpeed
+        
+        self.wheelDiameter = wheelDiameter / 1000.0 # mm to meters
+        self.axleTrack = axleTrack / 1000.0 # mm to meters
+        self.leftMotorPort = leftMotorPort
+        self.rightMotorPort = rightMotorPort
+        
+        # Turn on spot feature
+        self.enableTurnOnSpot = True
+        self.isTurningOnSpot = False
+        self.turnOnSpotThreshold = math.radians(10)
+        self.stopTurnOnSpotThreshold = math.radians(8)
+        
+        # Robot physical parameters
+        self.mass = 0.592 # kg
+        self.wheelCircumference = math.pi * self.wheelDiameter
+        
+        # PID controller parameters
+        kp_position = 50.0
+        kd_position = 2 * math.sqrt(self.mass * kp_position)
+        self.positionPID = PID(
+            kP=kp_position, 
+            kI=0.0, 
+            kD=kd_position, 
+            outputRange=[-maxMotorSpeed, maxMotorSpeed]
+        )
+        
+        kp_heading = 100.0
+        # ki_heading = 10.0
+        ki_heading = 0.0
+        kd_heading = 2 * math.sqrt(self.mass * kp_heading)
+        self.headingPID = PID(
+            kP=kp_heading, 
+            kI=ki_heading, 
+            kD=kd_heading, 
+            accumLimit=10, 
+            accumUnder=math.radians(10), 
+            resetIntegralOnSignChange=True,
+            outputRange=[-maxMotorSpeed, maxMotorSpeed]
+        )
+
+        # Configuration
+        self.timer = StopWatch()
+        self.leftSpeed = 0.0
+        self.rightSpeed = 0.0
+        self.rampLeftSpeed = 0.0
+        self.rampRightSpeed = 0.0
+        self.driveOwner = WALL # who should start with command over the motors
+        self.configureSensors()
+        self.configureMotors()
+        
+        # Start threads (odometryLoop keeps running until shutdown() clears this flag)
+        self.running = True
+        self.odometryThread = threading.Thread(target=self.odometryLoop)
+        self.odometryThread.start()
+        self.logger = threading.Thread(target=self.loggerLoop)
+        self.logger.start()
+    
+    def loggerLoop(self):
+        testing = 1
+        if not testing:
+            # Update pose
+            print("Position: (", self.x * 1000, ", ", self.y * 1000, "), Heading: ", math.degrees(self.theta), " degrees")
+            # Update commands
+            print("OnSpotTurn: ", self.isTurningOnSpot, "left: ", self.rampLeftSpeed, "right: ", self.rampRightSpeed)
+            print()
+
+    def odometryLoop(self):
+        # Ctrl+C (Force quit) wont quit silently with the motors still running.
+        try:
+            self._odometryLoop()
+        except KeyboardInterrupt:
+            self.running = False
+            self.halt()
+
+    def _odometryLoop(self):
+        prevLeftMotorRotation = 0.0
+        prevRightMotorRotation = 0.0
+        while self.running:
+            # Get the current motor rotations
+            leftMotorRotation = self.leftMotor.angle() # in degrees
+            rightMotorRotation = self.rightMotor.angle() # in degrees
+            
+            # Calculate the change in motor rotations since the last update
+            deltaLeftMotorRotation = leftMotorRotation - prevLeftMotorRotation
+            deltaRightMotorRotation = rightMotorRotation - prevRightMotorRotation
+            
+            # Update previous motor rotations for the next iteration
+            prevLeftMotorRotation = leftMotorRotation
+            prevRightMotorRotation = rightMotorRotation
+            
+            # Update odometry based on motor rotations
+            self.odometryUpdate(deltaLeftMotorRotation, deltaRightMotorRotation)
+            
+            wait(10) # yield 10ms so this thread doesnt busy-loop and potentially starve the control loop
+        
+    def odometryUpdate(self, leftMotorRotation, rightMotorRotation):
+        # Calculate the distance each wheel has traveled
+        leftDistance = (leftMotorRotation / 360.0) * self.wheelCircumference
+        rightDistance = (rightMotorRotation / 360.0) * self.wheelCircumference
+
+        leftDistance *= 0.998
+        
+        # Calculate the change in position and heading
+        deltaDistance = (leftDistance + rightDistance) / 2.0
+        deltaTheta = (rightDistance - leftDistance) / self.axleTrack
+        
+        # Update the robot's position and heading
+        self.x += deltaDistance * math.cos(self.theta + deltaTheta / 2.0)
+        self.y += deltaDistance * math.sin(self.theta + deltaTheta / 2.0)
+        self.theta += deltaTheta
+    
+    def configureSensors(self):
+        # self.gyro = GyroSensor(Port.S1)
+        # wait(100)
+        # self.gyro.reset_angle(0)
+        pass
+        
+    def configureMotors(self):
+        self.leftMotor = Motor(self.leftMotorPort, positive_direction=Direction.CLOCKWISE) # only way to get forward to be positive
+        self.rightMotor = Motor(self.rightMotorPort, positive_direction=Direction.CLOCKWISE)
+        # i believe this is already implicitly done, but explicitly resetting the angles anyways
+        self.leftMotor.reset_angle(0)
+        self.rightMotor.reset_angle(0)
+    
+    # ownership 
+    def setOwner(self, owner):
+        """
+        the drivebase can belong to ONE "owner"
+
+        Stops the motors on every handoff, so the wheels are guaranteed still when the new owner takes over. 
+        halt() also zeroes the ramp state, so a later drive() by the new owner ramps up from a clean state instead of a stale one.
+        Any drive() loop still running for the previous owner returns False on its next pass.
+        """
+        self.driveOwner = owner
+        self.halt()
+
+    def isOwner(self, owner):
+        return self.driveOwner == owner
+
+    # motor commands (all ownership-checked now)
+    def runMotors(self, leftSpeed, rightSpeed, owner=WALL):
+        """
+        Drive both wheels with independent speeds [-100.0, +100.0].
+        Ignored (returns False) if "owner" is not the current drivebase owner.
+
+        Args:
+            leftSpeed (double): Duty cycle of left wheel [-100.0, +100.0]
+            rightSpeed (double): Duty cycle of right wheel [-100.0, +100.0]
+            owner (str): Who is asking
+        """
+        if owner != self.driveOwner:
+            return False
+        
+        self.leftMotor.dc(leftSpeed)
+        self.rightMotor.dc(rightSpeed)
+        return True
+
+    def drive(self, distance, heading, owner=WALL):
+        """
+        Drive the robot at a given distance and heading.
+
+        If ownership moves to someone else, it returns False on the next loop pass without calling stop(). 
+        The motors were already halted by setOwner() at the moment of the handoff.
+        Returns True if the target was reached.
+        
+        :param distance: Distance to drive in meters.
+        :param heading: Heading to maintain in radians.
+        :param owner: Who is asking
+        """
+        targetX = self.x + distance * math.cos(heading)
+        targetY = self.y + distance * math.sin(heading)
+        
+        # Starts each move from clean PID state (stale prevError/integral from the previous move would otherwise leak in)
+        self.positionPID.reset()
+        self.headingPID.reset()
+        
+        prevTime = -0.0001
+        while math.sqrt((targetX - self.x) ** 2 + (targetY - self.y) ** 2) > 0.01: # Continue until within 1 cm of target
+            # lost ownership: bail out immediately, leave the motors alone (the new owner is driving)
+            if owner != self.driveOwner:
+                self.isTurningOnSpot = False # don't leave a stale on-the-spot flag for the next drive()
+                return False
+
+            currentTime = self.timer.time()
+            dt = currentTime - prevTime
+            prevTime = currentTime
+            
+            # Calculate the desired heading to the target position
+            desiredHeading = math.atan2(targetY - self.y, targetX - self.x)
+            _, _, heading = self.getPose()
+            headingError = desiredHeading - heading
+            headingError = (headingError + math.pi) % (2 * math.pi) - math.pi # Normalize to [-pi, pi]
+            
+            # Use PID controllers for speed and heading
+            distanceError = math.sqrt((targetX - self.x) ** 2 + (targetY - self.y) ** 2) # in meters
+            distanceError *= 100 # Convert to cm
+            speed = self.positionPID.calculate(0, -distanceError, dt) # Negative because we want to reduce the error
+            turnSpeed = self.headingPID.calculate(0, -headingError, dt) # Negative because we want to reduce the error
+            
+            # Turn on spot feature
+            if self.enableTurnOnSpot and abs(headingError) > self.turnOnSpotThreshold:
+                self.isTurningOnSpot = True
+            if self.enableTurnOnSpot and abs(headingError) < self.stopTurnOnSpotThreshold:
+                self.isTurningOnSpot = False
+            if self.enableTurnOnSpot and self.isTurningOnSpot:
+                speed = 0
+            
+            # Set motor speeds based on PID outputs
+            self.leftSpeed = speed - turnSpeed
+            self.rightSpeed = speed + turnSpeed
+            
+            # Limit speed to maxMotorSpeed
+            self.leftSpeed = self.limit(self.leftSpeed, self.maxMotorSpeed)
+            self.rightSpeed = self.limit(self.rightSpeed, self.maxMotorSpeed)
+            
+            # Ramp rate control
+            self.rampLeftSpeed, self.rampRightSpeed = self.rampRateControl(self.leftSpeed, self.rightSpeed, self.rampLeftSpeed, self.rampRightSpeed)
+            
+            # self.leftMotor.dc(self.leftSpeed)
+            # self.rightMotor.dc(self.rightSpeed)
+            self.leftMotor.dc(self.rampLeftSpeed)
+            self.rightMotor.dc(self.rampRightSpeed)
+            
+            wait(10) # Wait for a short duration before the next update
+        self.stop(owner)
+        return True
+    
+    def rampRateControl(self, leftSpeed, rightSpeed, rampLeftSpeed, rampRightSpeed):
+        leftIncrement = self.limit(leftSpeed - rampLeftSpeed, self.maxMotorSpeed / 10)
+        rampLeftSpeed += leftIncrement
+        
+        rightIncrement = self.limit(rightSpeed - rampRightSpeed, self.maxMotorSpeed / 10)
+        rampRightSpeed += rightIncrement
+        return rampLeftSpeed, rampRightSpeed
+    
+    def limit(self, value, limit):
+        if value > limit:
+            return limit
+        if value < -limit:
+            return -limit
+        return value
+    
+    def getPose(self):
+        """
+        Returns the current pose of the robot in meters and radians as a tuple.
+        
+        Example:
+        global_x, global_y, global_theta = drivebase.getPose()
+        """
+        # return self.gyro.angle() * math.pi / 180 # Convert degrees to radians
+        return self.x, self.y, self.theta
+
+    def stop(self, owner=WALL):
+        # stop both motors. Ignored if "owner" is not the current drivebase owner
+        if owner != self.driveOwner:
+            return False
+        self.halt()
+        return True
+
+    def halt(self):
+        # unconditional stop (no ownership check). Used by shutdown() and by stop()
+        self.leftMotor.dc(0) # Stop left motor
+        self.rightMotor.dc(0) # Stop right motor
+        # keep the ramp state in sync with the stopped motors so the next drive() ramps up from 0
+        self.rampLeftSpeed = 0.0
+        self.rampRightSpeed = 0.0
+
+    def shutdown(self):
+        """
+        Stops the motors and ends the odometry thread so the program can exit. 
+        Ignores ownership bc only main.py should be calling shutdown.
+        """
+        self.running = False
+        self.halt()
+
+if __name__ == "__main__":
+    drivebase = DifferentialDrive(x=0, y=0, theta=0)
+    tile = 0.3048 # 1 foot in meters
+    drivebase.drive(tile*2, 0)
