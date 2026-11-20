@@ -1,11 +1,6 @@
 #!/usr/bin/env pybricks-micropython
 import heapq
 
-
-class PathFinder:
-    def __init__(self, position, parent=None):
-        self.position = position  # (row, col)
-        self.parent = parent
 # Grid conventions (shared with the rest of the project):
 #   - Planning grid is grid[ix][iy] with ix = 0 ... GRID_X_CELLS (x) and iy = 0 ... GRID_Y_CELLS (y).
 #   - Neighboring grid points are CELL_M apart (CELLS_PER_TILE = 2), so start/goal/obstacle centers (tile intersections) land exactly on points.
@@ -33,7 +28,6 @@ class Node:
     def __lt__(self, other):
         return self.f < other.f
 
-    @staticmethod
 def heuristic(current, goal):
     return abs(current[0] - goal[0]) + abs(current[1] - goal[1])
 
@@ -78,7 +72,7 @@ def astar(grid, start, end):
                 current = current.parent
             return path[::-1]  #return reversed path
 
-        closed_set.add(current_pos)
+            closed_set.add(current_pos)
 
         for new_position in adjacent_movements:
             node_position = (current_pos[0] + new_position[0], current_pos[1] + new_position[1])
@@ -101,12 +95,8 @@ def astar(grid, start, end):
             child.h = heuristic(child.position, end_node.position)
             child.f = child.g + child.h
 
-                existing_cost = open_positions.get(neighbor)
-                if existing_cost is not None and existing_cost <= child.g:
-                    continue
-
-                heapq.heappush(open_list, child)
-                open_positions[neighbor] = child.g
+            heapq.heappush(open_list, child)
+            open_positions[neighbor] = child.g
 
     return None
 
