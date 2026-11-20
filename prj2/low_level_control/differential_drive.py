@@ -9,6 +9,7 @@ from low_level_control.pid import PID
 
 # Drivebase ownership
 EXPLORE = "EXPLORE"
+WALL = "WALL"
 EXTINGUISH = "EXTINGUISH"
 
 class DifferentialDrive:
