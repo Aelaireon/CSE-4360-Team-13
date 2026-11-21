@@ -14,13 +14,13 @@ THREADS
     - runs the sequence below, once
 
 DRIVEBASE OWNERSHIP (NEW in `low_level_control/differential_drive.py`)
-drivebase.driveOwner is EXPLORE or EXTINGUISH. Only the current owner's commands can interact with the motors. 
+drivebase.driveOwner is WANDER, WALL or EXTINGUISH. Only the current owner's commands can interact with the motors. 
 If you're not the owner -> drive() / runMotors() / stop() is ignored and returns False.
   - setOwner() stops the motors on every handoff, so the wheels are still when the new owner starts.
   - This file passes owner=EXTINGUISH on every call
   - If drivebase.drive() returns False the exploring code lost ownership. Must wait.
         if not drivebase.drive(d, h):
-            while drivebase.driveOwner != EXPLORE and not goal.finished:
+            while drivebase.driveOwner != WALL and not goal.finished:
                 wait(20)
   - Once the fire sequence starts, ownership never goes back: it stays EXTINGUISH and goal.finished
     becomes True at the end. Exploring loops should end on goal.finished so the program can exit safely.
@@ -156,8 +156,8 @@ class GoalFinding:
         while self.running:
             if self.detector.fireFound and not self.finished:
                 self.drivebase.setOwner(EXTINGUISH) # halts the wheels; exploring commands are ignored from here on
-                self.run()
-                self.finished = True # ownership deliberately stays EXTINGUISH
+                if self.run():
+                    self.finished = True # ownership deliberately stays EXTINGUISH. Stays False if stop() aborted the sequence
                 return
             wait(POLL_MS)
 
@@ -167,15 +167,18 @@ class GoalFinding:
         self.halt()
         self.ev3.speaker.beep(1000, 100)
         wait(SETTLE_MS)
-        self.halt() # again: an exploring loop that passed its ownership check just before
-                    # setOwner() may have written one last motor command in between
+        self.halt() # again, harmless: setOwner() is locked inside the drivebase, so no stale exploring command can slip in
+                    # (kept as a cheap safety net)
 
         # 2. spin to both pad edges, then face the candle (or the middle of the pad)
         self.candleSeen = self.scanPadForCandle(verbose=DEBUG_PRINT)
+        if not self.running:
+            return False # stop() was called mid-scan: don't beep / fan / report success
 
         # 3. final beeps, then fan
         self.arrive()
         self.extinguish()
+        return self.running # False if stop() cut the fan run short
 
     # step 2: find the pad's edges, then face the candle
     def scanPadForCandle(self, verbose=False):
@@ -212,7 +215,7 @@ class GoalFinding:
         seenPad = self.detector.onPad
         offTimer = StopWatch()
         timer = StopWatch()
-        while timer.time() < SCAN_TIMEOUT_MS:
+        while self.running and timer.time() < SCAN_TIMEOUT_MS:
             _, _, theta = self.drivebase.getPose()
             if abs(theta - start) >= maxAngle or self.bumped():
                 break
@@ -274,7 +277,7 @@ class GoalFinding:
     def spinTo(self, targetTheta):
         # spin in place toward targetTheta. Returns when within SPIN_TOLERANCE or on timeout
         timer = StopWatch()
-        while timer.time() < SPIN_TIMEOUT_MS:
+        while self.running and timer.time() < SPIN_TIMEOUT_MS:
             _, _, theta = self.drivebase.getPose()
             error = wrapAngle(targetTheta - theta)
             if abs(error) < SPIN_TOLERANCE:
@@ -297,7 +300,9 @@ class GoalFinding:
         if self.fan is None:
             return
         self.fan.dc(FAN_DUTY)
-        wait(FAN_SECONDS * 1000)
+        fanTimer = StopWatch()
+        while self.running and fanTimer.time() < FAN_SECONDS * 1000:
+            wait(20) # polled (not one long wait) so stop() can cut the fan run short
         self.fan.dc(0)
 
 """
@@ -311,7 +316,6 @@ if __name__ == "__main__":
     DRIVE_ENABLED = False        # True: drive forward while printing. False: sit still and print
     # to stop early: press the brick's CENTER button (Ctrl+C is unreliable with the background threads)
     DRIVE_SPEED = 20            # duty cycle %
-    MAX_DRIVE_DISTANCE = 0.60   # m, stops on its own after this so it can't run off the table
     PRINT_MS = 50               # time between printed lines. Short so thin grid lines don't slip between prints
     READ_ULTRASONIC = True      # False skips the ultrasonic read (it adds a bit of delay to every line)
 
@@ -328,8 +332,6 @@ if __name__ == "__main__":
             x, y, _ = drivebase.getPose()
             traveled = math.sqrt(x * x + y * y)
             if DRIVE_ENABLED:
-                if traveled >= MAX_DRIVE_DISTANCE:
-                    break
                 drivebase.runMotors(DRIVE_SPEED, DRIVE_SPEED)
 
             reflection = colorSensor.reflection()

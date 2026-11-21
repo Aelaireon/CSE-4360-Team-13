@@ -5,7 +5,7 @@ import random
 
 from low_level_control.differential_drive import DifferentialDrive, WANDER, WALL
 from pybricks.hubs import EV3Brick
-from pybricks.parameters import Port, Button
+from pybricks.parameters import Port, Button, Color
 from pybricks.ev3devices import TouchSensor, UltrasonicSensor
 from pybricks.tools import wait
 
@@ -37,6 +37,7 @@ class Wander:
         self.drive.runMotors(left, right, WANDER)
         
     def loop(self):
+        self.ev3.light.on(Color.YELLOW)
         while self.running:
             if contact:
                 self.drive.setOwner(WALL)

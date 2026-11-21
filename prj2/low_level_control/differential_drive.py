@@ -1,6 +1,7 @@
 #!/usr/bin/env pybricks-micropython
 import math
 import threading
+import _thread  # for allocate_lock(): the lock that makes ownership changes atomic
 
 from pybricks.ev3devices import GyroSensor, Motor
 from pybricks.parameters import Direction, Port
@@ -78,6 +79,7 @@ class DifferentialDrive:
         self.rightSpeed = 0.0
         self.rampLeftSpeed = 0.0
         self.rampRightSpeed = 0.0
+        self.lock = _thread.allocate_lock() # guards driveOwner + every motor write (NOT reentrant: never nest it)
         self.driveOwner = WALL # who should start with command over the motors
         self.configureSensors()
         self.configureMotors()
@@ -165,8 +167,26 @@ class DifferentialDrive:
         halt() also zeroes the ramp state, so a later drive() by the new owner ramps up from a clean state instead of a stale one.
         Any drive() loop still running for the previous owner returns False on its next pass.
         """
-        self.driveOwner = owner
-        self.halt()
+        with self.lock:
+            self.driveOwner = owner
+            self._haltLocked()
+
+    def handoff(self, fromOwner, toOwner):
+        """
+        Compare-and-set version of setOwner(): only hands the drivebase to toOwner if fromOwner
+        is STILL the current owner, so a behavior giving up control can never take it back from
+        a higher-priority owner that grabbed it in the meantime (e.g. a wall-follow timeout
+        landing just after goal finding took over). Stops the motors on a successful handoff.
+
+        Returns True if the handoff happened, False if fromOwner no longer owned the drivebase.
+        Use setOwner() only for a behavior that is allowed to preempt (goal finding).
+        """
+        with self.lock:
+            if self.driveOwner != fromOwner:
+                return False
+            self.driveOwner = toOwner
+            self._haltLocked()
+            return True
 
     def isOwner(self, owner):
         return self.driveOwner == owner
@@ -185,9 +205,17 @@ class DifferentialDrive:
         if owner != self.driveOwner:
             return False
         
-        self.leftMotor.dc(leftSpeed)
-        self.rightMotor.dc(rightSpeed)
-        return True
+        return self._setMotors(leftSpeed, rightSpeed, owner)
+
+    def _setMotors(self, leftSpeed, rightSpeed, owner):
+        # the ownership check and the motor write happen under ONE lock hold. That way a stale
+        # command from the old owner can't land after setOwner()/handoff()/shutdown() has stopped the wheels
+        with self.lock:
+            if owner != self.driveOwner:
+                return False
+            self.leftMotor.dc(leftSpeed)
+            self.rightMotor.dc(rightSpeed)
+            return True
 
     def drive(self, distance, heading, owner=WALL):
         """
@@ -252,8 +280,9 @@ class DifferentialDrive:
             
             # self.leftMotor.dc(self.leftSpeed)
             # self.rightMotor.dc(self.rightSpeed)
-            self.leftMotor.dc(self.rampLeftSpeed)
-            self.rightMotor.dc(self.rampRightSpeed)
+            if not self._setMotors(self.rampLeftSpeed, self.rampRightSpeed, owner):
+                self.isTurningOnSpot = False
+                return False # lost ownership between the check above and the write
             
             wait(10) # Wait for a short duration before the next update
         self.stop(owner)
@@ -288,11 +317,19 @@ class DifferentialDrive:
         # stop both motors. Ignored if "owner" is not the current drivebase owner
         if owner != self.driveOwner:
             return False
-        self.halt()
-        return True
+        with self.lock:
+            if owner != self.driveOwner:
+                return False
+            self._haltLocked()
+            return True
 
     def halt(self):
-        # unconditional stop (no ownership check). Used by shutdown() and by stop()
+        # unconditional stop (no ownership check). Used by the odometry error path
+        with self.lock:
+            self._haltLocked()
+
+    def _haltLocked(self):
+        # the actual stop. The caller must already hold self.lock (it is not reentrant)
         self.leftMotor.dc(0) # Stop left motor
         self.rightMotor.dc(0) # Stop right motor
         # keep the ramp state in sync with the stopped motors so the next drive() ramps up from 0
@@ -305,9 +342,16 @@ class DifferentialDrive:
         Ignores ownership bc only main.py should be calling shutdown.
         """
         self.running = False
-        self.halt()
+        with self.lock:
+            # Nobody owns the drivebase from here on, so every owner-checked command from any
+            # thread (wall following, goal finding, ...) is ignored and can't restart the motors.
+            self.driveOwner = None
+            self._haltLocked()
 
 if __name__ == "__main__":
     drivebase = DifferentialDrive(x=0, y=0, theta=0)
     tile = 0.3048 # 1 foot in meters
-    drivebase.drive(tile*2, 0)
+    try:
+        drivebase.drive(tile*2, 0)
+    finally:
+        drivebase.shutdown() # otherwise the odometry thread keeps the program alive forever
