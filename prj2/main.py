@@ -3,9 +3,6 @@
 """
 CSE 4360 - Project 2: Wander, wall following, and goal finding to extinguish a fire.
 
-Requires LEGO(R) EV3 MicroPython v2.0.
-Download: https://education.lego.com/en-us/support/mindstorms-ev3/python-for-ev3
-
 THREADS
 1. odometry            (DifferentialDrive)   always running
 2. color monitor       (FireDetector)        always running, sensing only
@@ -15,12 +12,11 @@ THREADS
 6. main thread         (this file)           only watches for the end condition / CENTER button
 
 WHO DRIVES (the drivebase has exactly one owner at a time, every other behavior's commands are ignored)
-  start -> WANDER (the robot starts in open floor, so it first looks for a wall)
-  WANDER -> WALL        a wall is touched (bumper), or WANDER_MAX_MS passes without touching one
-  WALL   -> WANDER      the wall time budget is used up, or no wall was touched for NO_CONTACT_MS
-  any    -> EXTINGUISH  the color monitor latches fireFound. Goal finding always wins and never gives it back.
-Every switch plays a light + beep cue (mode_cue.py). The behaviors hand the drivebase over themselves,
-so this file has nothing to coordinate: it only starts the threads and waits.
+  start  -> WANDER
+  WANDER -> WALL        
+  WALL   -> WANDER      
+  any    -> EXTINGUISH  
+Every switch plays a light + beep cue (mode_cue.py)
 
 Stop at any time: press the brick's CENTER button.
 """
@@ -34,13 +30,13 @@ from wander import Wander
 from wall_follow import WallFollower
 from goal_finding import FireDetector, GoalFinding
 
-# ---------------- ports ----------------
-COLOR_PORT = Port.S1        # floor-facing color sensor (fire pad detection)
-BUMPER_PORT = Port.S2       # touch sensor bumper (shared by wander, wall following and goal finding)
-ULTRASONIC_PORT = Port.S4   # front-facing ultrasonic (wander's open-space check, candle finding)
+# ports 
+COLOR_PORT = Port.S1        
+BUMPER_PORT = Port.S2      
+ULTRASONIC_PORT = Port.S4   
 FAN_PORT = None             # e.g. Port.B once the fan motor is mounted. None = skip the fan
 
-START_MODE = WANDER         # WALL to start by wall following instead (robot placed against a wall)
+START_MODE = WANDER
 MONITOR_MS = 50
 
 
@@ -56,7 +52,7 @@ def main():
     ultrasonic = UltrasonicSensor(ULTRASONIC_PORT)
     fan = Motor(FAN_PORT) if FAN_PORT is not None else None
 
-    detector = FireDetector(ColorSensor(COLOR_PORT))    # its thread starts immediately
+    detector = FireDetector(ColorSensor(COLOR_PORT))    # its thread starts immediately. We want it running constantly!
     wander = Wander(ev3, drivebase, ultrasonic, bumper)
     wall = WallFollower(ev3, drivebase, ultrasonic, bumper)
     goal = GoalFinding(ev3, drivebase, detector, ultrasonic, bumper=bumper, fan=fan)
@@ -85,10 +81,7 @@ def main():
     except KeyboardInterrupt:
         print("interrupted")
     finally:
-        # 1. shutdown() first: it clears the drivebase owner, so from this instant every motor
-        #    command from any thread (including a goal thread mid-spin) is ignored
         drivebase.shutdown()
-        # 2. tell the threads to end (their loops check running). The program exits once they have
         wander.stop()
         wall.stop()
         goal.stop()
