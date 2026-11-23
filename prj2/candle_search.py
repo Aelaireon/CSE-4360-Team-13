@@ -90,8 +90,8 @@ class CandleSearch:
         return math.radians(-distance / 25 + 25)
 
 
-    def _findCandleByDip(self, distances, angles, bin_deg=1.0, side_deg=30,
-                     drop_mm=100, min_w_deg=4, max_w_deg=50, no_return=2500):
+    def _findCandleByDip(self, distances, angles, bin_deg=1.0, side_deg=31.0,
+                     drop_mm=150, min_w_deg=17.0, max_w_deg=26.0, no_return=2500):
         bin_count = int(360 / bin_deg)
         range_bins = [no_return] * bin_count
         for distance, angle in zip(distances, angles):
@@ -227,10 +227,10 @@ class CandleSearch:
                 raw_dist,
                 raw_theta,
                 bin_deg=1.0,
-                side_deg=30,
-                drop_mm=100,
-                min_w_deg=4,
-                max_w_deg=50,
+                side_deg=31.0,
+                drop_mm=150,
+                min_w_deg=17.0,
+                max_w_deg=26.0,
                 no_return=2500 + ultrasonic_distance_offset
             )
             

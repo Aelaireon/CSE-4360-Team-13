@@ -34,6 +34,7 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 
 SENSOR_OFFSET_MM = 80                        # robot's ultrasonic_distance_offset
 NO_RETURN_DEFAULT = 2500 + SENSOR_OFFSET_MM  # robot passes no_return=2500 + offset
@@ -74,8 +75,8 @@ def find_candle(
     bin_deg=1.0,
     side_deg=30.0,
     drop_mm=100.0,
-    min_width_deg=4.0,
-    max_width_deg=50.0,
+    min_width_deg=5,
+    max_width_deg=23.0,
     no_return=NO_RETURN_DEFAULT,
 ):
     """
@@ -252,14 +253,14 @@ def main():
                    help=f"readings >= this are discarded (default {NO_RETURN_DEFAULT} = 2500 + offset)")
     p.add_argument("--bin", type=float, default=1.0,
                    help="angular bin width in degrees (default 1)")
-    p.add_argument("--side", type=float, default=30.0,
-                   help="distance from each side sample in degrees (default 30)")
-    p.add_argument("--drop", type=float, default=100.0,
-                   dest="dip_drop", help="required dip depth below both sides in mm (default 100)")
-    p.add_argument("--min-width", type=float, default=4.0,
-                   help="minimum dip run width in degrees (default 4)")
-    p.add_argument("--max-width", type=float, default=50.0,
-                   help="maximum dip run width in degrees (default 50)")
+    p.add_argument("--side", type=float, default=31.0,
+                   help="distance from each side sample in degrees (default 31)")
+    p.add_argument("--drop", type=float, default=150.0,
+                   dest="dip_drop", help="required dip depth below both sides in mm (default 150)")
+    p.add_argument("--min-width", type=float, default=17.0,
+                   help="minimum dip run width in degrees (default 17)")
+    p.add_argument("--max-width", type=float, default=26.0,
+                   help="maximum dip run width in degrees (default 26)")
     p.add_argument("--zoom", type=float, default=None,
                    help="add a near-field panel showing +/- this many mm")
     p.add_argument("--remove-range", type=float, nargs=2, metavar=("MIN", "MAX"), default=None,
@@ -267,11 +268,14 @@ def main():
     p.add_argument("--no-raw", action="store_true", help="hide the faint pre-erosion points")
     p.add_argument("--overlay", action="store_true",
                    help="draw all files on one plot in different colors")
+    p.add_argument("--no-sliders", action="store_true",
+                   help="disable interactive parameter sliders")
     p.add_argument("--out", default=None, help="save the figure to this path (png/pdf/svg)")
     p.add_argument("--no-show", action="store_true", help="do not open a window")
     args = p.parse_args()
 
     scans = []
+    loaded_scans = []
     for f in args.files:
         try:
             d, t = load_scan(f)
@@ -293,6 +297,7 @@ def main():
         )
         summarize(Path(f).name, d, res)
         scans.append((Path(f).name, res))
+        loaded_scans.append((Path(f).name, d, t))
 
     title_suffix = (f" ({args.bin:g}° bins, sides ±{args.side:g}°, "
                     f"dip {args.dip_drop:g}mm, width {args.min_width:g}-{args.max_width:g}°)")
@@ -334,7 +339,87 @@ def main():
             style_axes(ax, args.offset, name)
             ax.legend(loc="upper right", fontsize=7)
 
-    fig.tight_layout()
+    if not args.no_sliders and not args.no_show:
+        fig.subplots_adjust(bottom=0.24)
+        slider_bin = fig.add_axes([0.10, 0.16, 0.36, 0.025])
+        slider_side = fig.add_axes([0.54, 0.16, 0.36, 0.025])
+        slider_drop = fig.add_axes([0.10, 0.11, 0.36, 0.025])
+        slider_min_width = fig.add_axes([0.54, 0.11, 0.36, 0.025])
+        slider_max_width = fig.add_axes([0.32, 0.06, 0.36, 0.025])
+        slider_no_return = fig.add_axes([0.10, 0.21, 0.36, 0.025])
+
+        bin_slider = Slider(slider_bin, "Bin (deg)", 0.5, 5,
+                            valinit=args.bin, valstep=0.5)
+        side_slider = Slider(slider_side, "Side (deg)", 5, 90,
+                             valinit=args.side, valstep=1)
+        drop_slider = Slider(slider_drop, "Dip (mm)", 0, 500,
+                             valinit=args.dip_drop, valstep=5)
+        min_width_slider = Slider(slider_min_width, "Min width (deg)", 1, 100,
+                                  valinit=args.min_width, valstep=1)
+        max_width_slider = Slider(slider_max_width, "Max width (deg)", 5, 180,
+                                  valinit=args.max_width, valstep=1)
+        no_return_slider = Slider(slider_no_return, "No-return (mm)", 500, 4000,
+                                  valinit=args.no_return, valstep=50)
+
+        def update_plot(_):
+            bin_deg = bin_slider.val
+            side_deg = side_slider.val
+            drop_mm = drop_slider.val
+            min_width_deg = min_width_slider.val
+            max_width_deg = max_width_slider.val
+            no_return = no_return_slider.val
+
+            if min_width_deg > max_width_deg:
+                return
+
+            live_scans = []
+            for name, distance_buffer, theta_buffer in loaded_scans:
+                result = find_candle(
+                    distance_buffer, theta_buffer,
+                    bin_deg=bin_deg, side_deg=side_deg, drop_mm=drop_mm,
+                    min_width_deg=min_width_deg,
+                    max_width_deg=max_width_deg,
+                    no_return=no_return,
+                )
+                live_scans.append((name, result))
+
+            for ax in axes.flat:
+                ax.clear()
+
+            live_title_suffix = (
+                f" ({bin_deg:g}° bins, sides ±{side_deg:g}°, "
+                f"dip {drop_mm:g}mm, width {min_width_deg:g}-{max_width_deg:g}°)"
+            )
+            for panel_index, ax in enumerate(axes.flat):
+                for scan_index, (name, result) in enumerate(live_scans):
+                    if len(live_scans) == 1:
+                        draw_scan(ax, result, args.offset, show_raw=show_raw)
+                    else:
+                        draw_scan(
+                            ax, result, args.offset,
+                            label=name, color=colors[scan_index % 10],
+                            show_raw=False,
+                        )
+                title = live_scans[0][0] if len(live_scans) == 1 else "Overlay"
+                title += live_title_suffix
+                if args.offset:
+                    title += f" [extra offset {args.offset:g} mm]"
+                if args.zoom and panel_index == 1:
+                    ax.set_xlim(-args.zoom, args.zoom)
+                    ax.set_ylim(-args.zoom, args.zoom)
+                    title = f"Zoom +/-{args.zoom:g} mm"
+                style_axes(ax, args.offset, title)
+                ax.legend(loc="upper right", fontsize=7)
+            fig.canvas.draw_idle()
+
+        bin_slider.on_changed(update_plot)
+        side_slider.on_changed(update_plot)
+        drop_slider.on_changed(update_plot)
+        min_width_slider.on_changed(update_plot)
+        max_width_slider.on_changed(update_plot)
+        no_return_slider.on_changed(update_plot)
+    else:
+        fig.tight_layout()
     if args.out:
         fig.savefig(args.out, dpi=140, bbox_inches="tight")
         print(f"saved {args.out}")
