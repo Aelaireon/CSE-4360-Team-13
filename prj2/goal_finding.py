@@ -172,6 +172,12 @@ class GoalFinding:
         self.halt() # again, harmless: setOwner() is locked inside the drivebase, so no stale exploring command can slip in
                     # (kept as a cheap safety net)
 
+        # 1.5 last minute added backup before scanning pad
+        self.motors(-20, -20)
+        wait(600)
+        self.halt()
+        wait(SETTLE_MS)
+
         # 2. spin to both pad edges, then face the candle (or the middle of the pad)
         self.candleSeen = self.scanPadForCandle(verbose=DEBUG_PRINT)
         if not self.running:
@@ -182,57 +188,55 @@ class GoalFinding:
         self.extinguish()
         return self.running # False if stop() cut the fan run short
 
-    # step 2: find the pad's edges, then face the candle
+    # step 2: find the found pad left and right, then face the candle or default to og heading
     def scanPadForCandle(self, verbose=False):
-        # spin CW until the color sensor runs off the pad, then CCW across the pad (logging the
-        # ultrasonic) until it runs off the other side. Then turn to the candle if the ultrasonic
-        # saw it in between, otherwise to the middle of the two pad edges.
-        # Returns True if the candle was seen, False if it aimed at the middle of the pad.
         _, _, theta0 = self.drivebase.getPose()
-        maxAngle = math.radians(MAX_PAD_SWEEP_DEG)
+        sweep = math.radians(50)
+        left_target = wrapAngle(theta0 + sweep)
+        right_target = wrapAngle(theta0 - sweep)
 
-        thetaCW = self.spinUntilOffPad(-1, maxAngle)
         samples = []
-        thetaCCW = self.spinUntilOffPad(1, 2 * maxAngle, samples)
+
+        # spin to -50 deg (right) while logging ultrasonic
+        timer = StopWatch()
+        while self.running and timer.time() < SCAN_TIMEOUT_MS:
+            if self.bumped():
+                break
+            _, _, theta = self.drivebase.getPose()
+            samples.append((theta, self.ultrasonic.distance()))
+            err = wrapAngle(right_target - theta)
+            if abs(err) < SPIN_TOLERANCE:
+                break
+            speed = SCAN_SPIN_SPEED if err > 0 else -SCAN_SPIN_SPEED
+            self.motors(-speed, speed)
+            wait(10)
+        self.halt()
+
+        # spin to +50 deg (left) while logging ultrasonic
+        timer = StopWatch()
+        while self.running and timer.time() < SCAN_TIMEOUT_MS:
+            if self.bumped():
+                break
+            _, _, theta = self.drivebase.getPose()
+            samples.append((theta, self.ultrasonic.distance()))
+            err = wrapAngle(left_target - theta)
+            if abs(err) < SPIN_TOLERANCE:
+                break
+            speed = SCAN_SPIN_SPEED if err > 0 else -SCAN_SPIN_SPEED
+            self.motors(-speed, speed)
+            wait(10)
+        self.halt()
 
         target = self.findCandleHeading(samples)
         found = target is not None
         if not found:
-            target = (thetaCW + thetaCCW) / 2.0 # no candle seen: aim at the middle of the pad
+            target = theta0
         if verbose:
-            print("pad edges at deg:", round(math.degrees(thetaCW - theta0), 1), "(CW) and",
-                  round(math.degrees(thetaCCW - theta0), 1), "(CCW)")
             self.printScan(samples, theta0, target if found else None)
             print("aiming at deg:", round(math.degrees(target - theta0), 1))
         self.spinTo(target)
         wait(SETTLE_MS)
         return found
-
-    def spinUntilOffPad(self, direction, maxAngle, samples=None):
-        # spin in place (direction +1 = CCW, -1 = CW) until the color sensor has run off the pad for
-        # OFF_PAD_MS, or maxAngle / SCAN_TIMEOUT_MS is hit.
-        # If it starts OFF the pad (it just ran off the other side), it first waits to get back ON.
-        # If samples is a list it logs (heading, ultrasonic mm). Returns the heading it stopped at.
-        _, _, start = self.drivebase.getPose()
-        seenPad = self.detector.onPad
-        offTimer = StopWatch()
-        timer = StopWatch()
-        while self.running and timer.time() < SCAN_TIMEOUT_MS:
-            _, _, theta = self.drivebase.getPose()
-            if abs(theta - start) >= maxAngle or self.bumped():
-                break
-            if self.detector.onPad:
-                seenPad = True
-                offTimer.reset()
-            elif seenPad and offTimer.time() >= OFF_PAD_MS:
-                break
-            self.motors(-direction * SCAN_SPIN_SPEED, direction * SCAN_SPIN_SPEED)
-            if samples is not None:
-                samples.append((theta, self.ultrasonic.distance()))
-            wait(10)
-        self.halt()
-        _, _, theta = self.drivebase.getPose()
-        return theta
 
     def findCandleHeading(self, samples):
         """
