@@ -6,18 +6,21 @@ CSE 4360 - Project 2: Wander, wall following, and goal finding to extinguish a f
 Requires LEGO(R) EV3 MicroPython v2.0.
 Download: https://education.lego.com/en-us/support/mindstorms-ev3/python-for-ev3
 
-CURRENT TEST CONFIG: wall following + goal finding running together.
-(wander is NOT wired in yet, so place the robot near a wall to start.)
-
 THREADS
 1. odometry            (DifferentialDrive)   always running
 2. color monitor       (FireDetector)        always running, sensing only
-3. wall following      (WallFollower.loop)   drives while it owns the drivebase (WALL)
-4. extinguish          (GoalFinding.loop)    waits for fireFound, then takes ownership (EXTINGUISH)
-5. main thread         (this file)           watches for the end condition / CENTER button
+3. wander              (Wander.loop)         drives while it owns the drivebase (WANDER)
+4. wall following      (WallFollower.loop)   drives while it owns the drivebase (WALL)
+5. extinguish          (GoalFinding.loop)    waits for fireFound, then takes ownership (EXTINGUISH)
+6. main thread         (this file)           only watches for the end condition / CENTER button
 
-PRIORITY: goal finding always wins. When the color monitor latches fireFound, GoalFinding calls
-setOwner(EXTINGUISH): the wheels stop and every WALL command is ignored from then on.
+WHO DRIVES (the drivebase has exactly one owner at a time, every other behavior's commands are ignored)
+  start -> WANDER (the robot starts in open floor, so it first looks for a wall)
+  WANDER -> WALL        a wall is touched (bumper), or WANDER_MAX_MS passes without touching one
+  WALL   -> WANDER      the wall time budget is used up, or no wall was touched for NO_CONTACT_MS
+  any    -> EXTINGUISH  the color monitor latches fireFound. Goal finding always wins and never gives it back.
+Every switch plays a light + beep cue (mode_cue.py). The behaviors hand the drivebase over themselves,
+so this file has nothing to coordinate: it only starts the threads and waits.
 
 Stop at any time: press the brick's CENTER button.
 """
@@ -27,15 +30,17 @@ from pybricks.parameters import Button, Port
 from pybricks.tools import wait
 
 from low_level_control.differential_drive import DifferentialDrive, WALL, WANDER
+from wander import Wander
 from wall_follow import WallFollower
 from goal_finding import FireDetector, GoalFinding
 
 # ---------------- ports ----------------
 COLOR_PORT = Port.S1        # floor-facing color sensor (fire pad detection)
-BUMPER_PORT = Port.S2       # touch sensor bumper (shared by wall following and goal finding)
-ULTRASONIC_PORT = Port.S4   # front-facing ultrasonic (candle finding)
+BUMPER_PORT = Port.S2       # touch sensor bumper (shared by wander, wall following and goal finding)
+ULTRASONIC_PORT = Port.S4   # front-facing ultrasonic (wander's open-space check, candle finding)
 FAN_PORT = None             # e.g. Port.B once the fan motor is mounted. None = skip the fan
 
+START_MODE = WANDER         # WALL to start by wall following instead (robot placed against a wall)
 MONITOR_MS = 50
 
 
@@ -52,28 +57,22 @@ def main():
     fan = Motor(FAN_PORT) if FAN_PORT is not None else None
 
     detector = FireDetector(ColorSensor(COLOR_PORT))    # its thread starts immediately
+    wander = Wander(ev3, drivebase, ultrasonic, bumper)
     wall = WallFollower(ev3, drivebase, ultrasonic, bumper)
     goal = GoalFinding(ev3, drivebase, detector, ultrasonic, bumper=bumper, fan=fan)
 
     try:
-        drivebase.setOwner(WALL)
+        drivebase.setOwner(START_MODE)  # before the threads start. The behavior that owns it announces itself when its thread starts
+        wander.start()
         wall.start()
         goal.start()
-        print("running: wall following + goal finding. CENTER button to stop")
+        print("running: wander + wall following + goal finding. CENTER button to stop")
 
         announced = False
         while drivebase.running and not goal.finished and not stopPressed(ev3):
             if detector.fireFound and not announced:
                 announced = True
                 print("fire pad detected, goal finding taking over")
-
-            # wall following hands ownership to WANDER when its time budget runs out.
-            # Wander isn't integrated yet, so give the drivebase straight back to WALL instead of
-            # leaving the robot idle. TODO: replace this with the real wander behavior.
-            # handoff() is atomic: it does nothing if goal finding already took the drivebase.
-            if not detector.fireFound:
-                drivebase.handoff(WANDER, WALL)
-
             wait(MONITOR_MS)
 
         if goal.finished:
@@ -90,6 +89,7 @@ def main():
         #    command from any thread (including a goal thread mid-spin) is ignored
         drivebase.shutdown()
         # 2. tell the threads to end (their loops check running). The program exits once they have
+        wander.stop()
         wall.stop()
         goal.stop()
         detector.stop()
