@@ -166,10 +166,16 @@ class DifferentialDrive:
         Stops the motors on every handoff, so the wheels are guaranteed still when the new owner takes over. 
         halt() also zeroes the ramp state, so a later drive() by the new owner ramps up from a clean state instead of a stale one.
         Any drive() loop still running for the previous owner returns False on its next pass.
+
+        Returns True if the owner was set, False if the drivebase was already shut down (shutdown() is final:
+        a thread that wakes up late can't take the drivebase back and restart the motors).
         """
         with self.lock:
+            if not self.running:
+                return False
             self.driveOwner = owner
             self._haltLocked()
+            return True
 
     def handoff(self, fromOwner, toOwner):
         """
@@ -182,7 +188,7 @@ class DifferentialDrive:
         Use setOwner() only for a behavior that is allowed to preempt (goal finding).
         """
         with self.lock:
-            if self.driveOwner != fromOwner:
+            if not self.running or self.driveOwner != fromOwner:
                 return False
             self.driveOwner = toOwner
             self._haltLocked()
