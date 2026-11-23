@@ -21,7 +21,7 @@ CandleSearch._findCandleByDip (candle_search.py):
 Usage:
     python visualize_sonar.py good_data.txt
     python visualize_sonar.py good_data.txt --side 30 --drop 100
-    python visualize_sonar.py good_data.txt --min-width 4 --max-width 50
+    python visualize_sonar.py good_data.txt --candle-width 60 --width-tolerance 0.50
     python visualize_sonar.py good_data.txt --zoom 900
     python visualize_sonar.py good_data.txt --out map.png --no-show
     python visualize_sonar.py data.txt good_data.txt --overlay
@@ -75,8 +75,8 @@ def find_candle(
     bin_deg=1.0,
     side_deg=30.0,
     drop_mm=100.0,
-    min_width_deg=5,
-    max_width_deg=23.0,
+    candle_width_mm=60.0,
+    width_tolerance=0.50,
     no_return=NO_RETURN_DEFAULT,
 ):
     """
@@ -129,9 +129,18 @@ def find_candle(
 
         for run_bins in runs:
             run_width_deg = len(run_bins) * bin_deg
-            if not (min_width_deg <= run_width_deg <= max_width_deg):
-                continue
             median_run_range = sorted(range_bins[i] for i in run_bins)[len(run_bins) // 2]
+            if median_run_range >= no_return:
+                continue
+
+            expected_width_deg = math.degrees(
+                2 * math.atan((candle_width_mm / 2) / median_run_range)
+            )
+            minimum_width_deg = expected_width_deg * (1 - width_tolerance)
+            maximum_width_deg = expected_width_deg * (1 + width_tolerance)
+            if not (minimum_width_deg <= run_width_deg <= maximum_width_deg):
+                continue
+
             if best_run is None or median_run_range < best_run[1]:
                 best_run = (run_bins, median_run_range)
 
@@ -257,10 +266,10 @@ def main():
                    help="distance from each side sample in degrees (default 31)")
     p.add_argument("--drop", type=float, default=150.0,
                    dest="dip_drop", help="required dip depth below both sides in mm (default 150)")
-    p.add_argument("--min-width", type=float, default=17.0,
-                   help="minimum dip run width in degrees (default 17)")
-    p.add_argument("--max-width", type=float, default=26.0,
-                   help="maximum dip run width in degrees (default 26)")
+    p.add_argument("--candle-width", type=float, default=60.0,
+                   help="expected candle width in mm (default 60)")
+    p.add_argument("--width-tolerance", type=float, default=0.50,
+                   help="allowed width error from 0 to 1, as a fraction (default 0.50)")
     p.add_argument("--zoom", type=float, default=None,
                    help="add a near-field panel showing +/- this many mm")
     p.add_argument("--remove-range", type=float, nargs=2, metavar=("MIN", "MAX"), default=None,
@@ -292,7 +301,8 @@ def main():
         res = find_candle(
             d, t,
             bin_deg=args.bin, side_deg=args.side, drop_mm=args.dip_drop,
-            min_width_deg=args.min_width, max_width_deg=args.max_width,
+            candle_width_mm=args.candle_width,
+            width_tolerance=args.width_tolerance,
             no_return=args.no_return,
         )
         summarize(Path(f).name, d, res)
@@ -300,7 +310,8 @@ def main():
         loaded_scans.append((Path(f).name, d, t))
 
     title_suffix = (f" ({args.bin:g}° bins, sides ±{args.side:g}°, "
-                    f"dip {args.dip_drop:g}mm, width {args.min_width:g}-{args.max_width:g}°)")
+                    f"dip {args.dip_drop:g}mm, candle {args.candle_width:g}mm "
+                    f"±{args.width_tolerance:.0%})")
     colors = plt.cm.tab10.colors
     show_raw = not args.no_raw
 
@@ -344,8 +355,8 @@ def main():
         slider_bin = fig.add_axes([0.10, 0.16, 0.36, 0.025])
         slider_side = fig.add_axes([0.54, 0.16, 0.36, 0.025])
         slider_drop = fig.add_axes([0.10, 0.11, 0.36, 0.025])
-        slider_min_width = fig.add_axes([0.54, 0.11, 0.36, 0.025])
-        slider_max_width = fig.add_axes([0.32, 0.06, 0.36, 0.025])
+        slider_candle_width = fig.add_axes([0.54, 0.11, 0.36, 0.025])
+        slider_width_tolerance = fig.add_axes([0.32, 0.06, 0.36, 0.025])
         slider_no_return = fig.add_axes([0.10, 0.21, 0.36, 0.025])
 
         bin_slider = Slider(slider_bin, "Bin (deg)", 0.5, 5,
@@ -354,10 +365,11 @@ def main():
                              valinit=args.side, valstep=1)
         drop_slider = Slider(slider_drop, "Dip (mm)", 0, 500,
                              valinit=args.dip_drop, valstep=5)
-        min_width_slider = Slider(slider_min_width, "Min width (deg)", 1, 100,
-                                  valinit=args.min_width, valstep=1)
-        max_width_slider = Slider(slider_max_width, "Max width (deg)", 5, 180,
-                                  valinit=args.max_width, valstep=1)
+        candle_width_slider = Slider(slider_candle_width, "Candle width (mm)", 20, 120,
+                                     valinit=args.candle_width, valstep=5)
+        width_tolerance_slider = Slider(slider_width_tolerance, "Width tolerance",
+                                        0.10, 1.00,
+                                        valinit=args.width_tolerance, valstep=0.05)
         no_return_slider = Slider(slider_no_return, "No-return (mm)", 500, 4000,
                                   valinit=args.no_return, valstep=50)
 
@@ -365,20 +377,17 @@ def main():
             bin_deg = bin_slider.val
             side_deg = side_slider.val
             drop_mm = drop_slider.val
-            min_width_deg = min_width_slider.val
-            max_width_deg = max_width_slider.val
+            candle_width_mm = candle_width_slider.val
+            width_tolerance = width_tolerance_slider.val
             no_return = no_return_slider.val
-
-            if min_width_deg > max_width_deg:
-                return
 
             live_scans = []
             for name, distance_buffer, theta_buffer in loaded_scans:
                 result = find_candle(
                     distance_buffer, theta_buffer,
                     bin_deg=bin_deg, side_deg=side_deg, drop_mm=drop_mm,
-                    min_width_deg=min_width_deg,
-                    max_width_deg=max_width_deg,
+                    candle_width_mm=candle_width_mm,
+                    width_tolerance=width_tolerance,
                     no_return=no_return,
                 )
                 live_scans.append((name, result))
@@ -388,7 +397,8 @@ def main():
 
             live_title_suffix = (
                 f" ({bin_deg:g}° bins, sides ±{side_deg:g}°, "
-                f"dip {drop_mm:g}mm, width {min_width_deg:g}-{max_width_deg:g}°)"
+                f"dip {drop_mm:g}mm, candle {candle_width_mm:g}mm "
+                f"±{width_tolerance:.0%})"
             )
             for panel_index, ax in enumerate(axes.flat):
                 for scan_index, (name, result) in enumerate(live_scans):
@@ -415,8 +425,8 @@ def main():
         bin_slider.on_changed(update_plot)
         side_slider.on_changed(update_plot)
         drop_slider.on_changed(update_plot)
-        min_width_slider.on_changed(update_plot)
-        max_width_slider.on_changed(update_plot)
+        candle_width_slider.on_changed(update_plot)
+        width_tolerance_slider.on_changed(update_plot)
         no_return_slider.on_changed(update_plot)
     else:
         fig.tight_layout()
