@@ -11,7 +11,7 @@ from pybricks.tools import StopWatch, wait
 
 SPEED = 60                      # duty speed %
 FRONT_OBSTACLE = 100            # front distance (mm) that counts as approaching a wall (only used by the disabled ultrasonic block in step())
-BACK_UP_MS = 1000               # how long to back straight up after a bumper hit
+BACK_UP = 1000               # how long to back straight up after a bumper hit
 TURN = 800                      # how long (ms) to turn left (CCW) after backing up
 TIMEOUT_WALL = 15000            # time budget (ms) for one stretch of wall following
 NO_CONTACT_MS = 8000            # no bump for this long (ms) -> hand back to wander (possibly circling)
@@ -59,9 +59,9 @@ class WallFollower:
         # 1. touch sensor hits wall: back up slightly and angle left
         if self.bumped():
             self.halt()
-            # Back straight up for BACK_UP_MS
+            # Back straight up for BACK_UP
             back_timer = StopWatch()
-            while back_timer.time() < BACK_UP_MS:
+            while back_timer.time() < BACK_UP:
                 if not self.running or self.drive.driveOwner != WALL:
                     self.halt()
                     return False
