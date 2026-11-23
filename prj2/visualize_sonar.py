@@ -15,8 +15,8 @@ Uses the same circular 1-degree binning and dip detection as
 CandleSearch._findCandleByDip (candle_search.py):
   1. keep the minimum distance in each 1-degree bin
   2. compare each bin with 5-bin median samples 30 degrees to each side
-  3. mark bins at least 100 mm below both background sides
-  4. select the median-depth run within the 4-50 degree width limits
+  3. mark bins at least the configured dip depth below both background sides
+  4. select the run matching the configured 60 mm candle width and tolerances
 
 Usage:
     python visualize_sonar.py good_data.txt
@@ -34,50 +34,66 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
+from matplotlib.widgets import Slider, Button
 
 SENSOR_OFFSET_MM = 80                        # robot's ultrasonic_distance_offset
-NO_RETURN_DEFAULT = 2500 + SENSOR_OFFSET_MM  # robot passes no_return=2500 + offset
+NO_RETURN_DEFAULT = 730 + SENSOR_OFFSET_MM  # robot passes no_return=2500 + offset
 
 
 # --------------------------------------------------------------------------- #
 # Parsing
 # --------------------------------------------------------------------------- #
-def parse_buffer(text, name):
-    """Return the list of numbers in '<name> buffer: [ ... ]' (may span lines).
-    If the buffer is printed more than once, the LAST occurrence is used."""
+def parse_all_buffers(text, name):
+    """Return every '<name> buffer: [ ... ]' list found in the text."""
     matches = list(re.finditer(rf"{name}\s*buffer\s*:\s*\[([^\]]*)\]", text, re.IGNORECASE))
     if not matches:
         raise ValueError(f"could not find a '{name} buffer: [...]' list in the file")
-    items = [s for s in re.split(r"[,\s]+", matches[-1].group(1)) if s]
-    return [None if s.lower() == "none" else float(s) for s in items]
+
+    buffers = []
+    for match in matches:
+        items = [s for s in re.split(r"[,\s]+", match.group(1)) if s]
+        buffers.append([None if s.lower() == "none" else float(s) for s in items])
+    return buffers
 
 
 def load_scan(path):
-    """Return raw (distance, theta) lists exactly as logged by the robot."""
+    """Return all (distance, theta) pairs logged in a file."""
     text = Path(path).read_text()
-    d = parse_buffer(text, "Distance")
-    t = parse_buffer(text, "Theta")
-    if len(d) != len(t):
-        n = min(len(d), len(t))
-        print(f"[{Path(path).name}] WARNING: {len(d)} distances vs {len(t)} angles; "
-              f"using the first {n} pairs", file=sys.stderr)
-        d, t = d[:n], t[:n]
-    return d, t
+    distance_buffers = parse_all_buffers(text, "Distance")
+    theta_buffers = parse_all_buffers(text, "Theta")
+
+    if len(distance_buffers) != len(theta_buffers):
+        print(
+            f"[{Path(path).name}] WARNING: {len(distance_buffers)} Distance buffers "
+            f"vs {len(theta_buffers)} Theta buffers",
+            file=sys.stderr,
+        )
+
+    paired_scans = []
+    for index, (distances, angles) in enumerate(
+        zip(distance_buffers, theta_buffers), start=1
+    ):
+        if len(distances) != len(angles):
+            pair_count = min(len(distances), len(angles))
+            print(
+                f"[{Path(path).name} scan {index}] WARNING: "
+                f"{len(distances)} distances vs {len(angles)} angles; "
+                f"using the first {pair_count} pairs",
+                file=sys.stderr,
+            )
+            distances = distances[:pair_count]
+            angles = angles[:pair_count]
+        paired_scans.append((distances, angles))
+    return paired_scans
 
 
 # --------------------------------------------------------------------------- #
-# Port of CandleSearch._findSmallestSegmentTarget
+# Port of CandleSearch._findCandleByDip
 # --------------------------------------------------------------------------- #
 def find_candle(
-    distance_buffer,
-    theta_buffer,
-    bin_deg=1.0,
-    side_deg=30.0,
-    drop_mm=100.0,
-    candle_width_mm=60.0,
-    width_tolerance=0.50,
-    edge_smudge_deg=7.0,
+    distance_buffer, theta_buffer,
+    bin_deg=1.0, side_deg=20.0, drop_mm=150,
+    candle_width_mm=60.0, width_tolerance=0.3, edge_smudge_deg=5.0,
     no_return=NO_RETURN_DEFAULT,
 ):
     """
@@ -268,17 +284,16 @@ def main():
                    help=f"readings >= this are discarded (default {NO_RETURN_DEFAULT} = 2500 + offset)")
     p.add_argument("--bin", type=float, default=1.0,
                    help="angular bin width in degrees (default 1)")
-    p.add_argument("--side", type=float, default=23.0,
-                   help="distance from each side sample in degrees (default 31)")
+    p.add_argument("--side", type=float, default=20.0,
+                   help="distance from each side sample in degrees (default 20)")
     p.add_argument("--drop", type=float, default=150.0,
                    dest="dip_drop", help="required dip depth below both sides in mm (default 150)")
     p.add_argument("--candle-width", type=float, default=60.0,
                    help="expected candle width in mm (default 60)")
     p.add_argument("--width-tolerance", type=float, default=0.3,
-                   help="allowed width error from 0 to 1, as a fraction (default 0.50)")
-    # p.add_argument("--edge-smudge", type=float, default=7.0,
-    p.add_argument("--edge-smudge", type=float, default=10.0,
-                   help="additional ultrasonic edge/spread allowance in degrees (default 7)")
+                   help="allowed width error from 0 to 1, as a fraction (default 0.3)")
+    p.add_argument("--edge-smudge", type=float, default=5.0,
+                   help="additional ultrasonic edge/spread allowance in degrees (default 5)")
     p.add_argument("--zoom", type=float, default=None,
                    help="add a near-field panel showing +/- this many mm")
     p.add_argument("--remove-range", type=float, nargs=2, metavar=("MIN", "MAX"), default=None,
@@ -288,6 +303,8 @@ def main():
                    help="draw all files on one plot in different colors")
     p.add_argument("--no-sliders", action="store_true",
                    help="disable interactive parameter sliders")
+    p.add_argument("--per-page", type=int, default=6,
+                   help="number of scan panels shown per page (default 6)")
     p.add_argument("--out", default=None, help="save the figure to this path (png/pdf/svg)")
     p.add_argument("--no-show", action="store_true", help="do not open a window")
     args = p.parse_args()
@@ -296,32 +313,44 @@ def main():
     loaded_scans = []
     for f in args.files:
         try:
-            d, t = load_scan(f)
+            paired_scans = load_scan(f)
         except (OSError, ValueError) as e:
             sys.exit(f"{f}: {e}")
 
-        if args.remove_range:
-            keep = [not (dv is not None and args.remove_range[0] <= dv <= args.remove_range[1]) for dv in d]
-            print(f"[{Path(f).name}] dropped {keep.count(False)} readings in "
-                  f"{args.remove_range[0]:.0f}-{args.remove_range[1]:.0f} mm", file=sys.stderr)
-            d = [v for v, k in zip(d, keep) if k]
-            t = [v for v, k in zip(t, keep) if k]
+        for scan_index, (d, t) in enumerate(paired_scans, start=1):
+            if len(paired_scans) == 1:
+                scan_name = Path(f).name
+            else:
+                scan_name = f"{Path(f).name} scan {scan_index}/{len(paired_scans)}"
 
-        res = find_candle(
-            d, t,
-            bin_deg=args.bin, side_deg=args.side, drop_mm=args.dip_drop,
-            candle_width_mm=args.candle_width,
-            width_tolerance=args.width_tolerance,
-            edge_smudge_deg=args.edge_smudge,
-            no_return=args.no_return,
-        )
-        summarize(Path(f).name, d, res)
-        scans.append((Path(f).name, res))
-        loaded_scans.append((Path(f).name, d, t))
+            if args.remove_range:
+                keep = [
+                    not (
+                        dv is not None
+                        and args.remove_range[0] <= dv <= args.remove_range[1]
+                    )
+                    for dv in d
+                ]
+                print(
+                    f"[{scan_name}] dropped {keep.count(False)} readings in "
+                    f"{args.remove_range[0]:.0f}-{args.remove_range[1]:.0f} mm",
+                    file=sys.stderr,
+                )
+                d = [v for v, k in zip(d, keep) if k]
+                t = [v for v, k in zip(t, keep) if k]
 
-    title_suffix = (f" ({args.bin:g}° bins, sides ±{args.side:g}°, "
-                    f"dip {args.dip_drop:g}mm, candle {args.candle_width:g}mm "
-                    f"±{args.width_tolerance:.0%})")
+            res = find_candle(
+                d, t,
+                bin_deg=args.bin, side_deg=args.side, drop_mm=args.dip_drop,
+                candle_width_mm=args.candle_width,
+                width_tolerance=args.width_tolerance,
+                edge_smudge_deg=args.edge_smudge,
+                no_return=args.no_return,
+            )
+            summarize(scan_name, d, res)
+            scans.append((scan_name, res))
+            loaded_scans.append((scan_name, d, t))
+
     colors = plt.cm.tab10.colors
     show_raw = not args.no_raw
 
@@ -335,7 +364,7 @@ def main():
                 else:
                     draw_scan(ax, res, args.offset, label=name, color=colors[si % 10],
                               show_raw=False)
-            title = (scans[0][0] if len(scans) == 1 else "Overlay") + title_suffix
+            title = scans[0][0] if len(scans) == 1 else "Overlay"
             if args.offset:
                 title += f" [extra offset {args.offset:g} mm]"
             if panel_index == 1:
@@ -346,19 +375,61 @@ def main():
             if panel_index == 0:
                 ax.legend(loc="upper right", fontsize=7)
     else:
-        n = len(scans)
-        cols = min(n, 3)
-        rows = -(-n // cols)
-        fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 6 * rows), squeeze=False)
-        for ax in axes.flat[n:]:
-            ax.axis("off")
-        for ax, (name, res) in zip(axes.flat, scans):
-            draw_scan(ax, res, args.offset, show_raw=show_raw)
-            if args.zoom:
-                ax.set_xlim(-args.zoom, args.zoom)
-                ax.set_ylim(-args.zoom, args.zoom)
-            style_axes(ax, args.offset, name)
-            ax.legend(loc="upper right", fontsize=7)
+        per_page = max(1, args.per_page)
+        page_index = [0]
+        live_grid_scans = [list(scans)]
+        page_count = -(-len(scans) // per_page)
+        cols = min(per_page, 3)
+        rows = -(-per_page // cols)
+        fig, axes = plt.subplots(
+            rows, cols,
+            figsize=(6 * cols, 6 * rows),
+            squeeze=False,
+        )
+        fig.subplots_adjust(bottom=0.30)
+        button_previous = None
+        button_next = None
+
+        def draw_grid_page(page_scans):
+            for ax in axes.flat:
+                ax.clear()
+                ax.axis("on")
+
+            for ax, (name, res) in zip(axes.flat, page_scans):
+                draw_scan(ax, res, args.offset, show_raw=show_raw)
+                if args.zoom:
+                    ax.set_xlim(-args.zoom, args.zoom)
+                    ax.set_ylim(-args.zoom, args.zoom)
+                style_axes(ax, args.offset, name)
+                ax.legend(loc="upper right", fontsize=7)
+
+            for ax in list(axes.flat)[len(page_scans):]:
+                ax.axis("off")
+            fig.canvas.draw_idle()
+
+        first_page = scans[:per_page]
+        draw_grid_page(first_page)
+
+        page_label = fig.text(
+            0.50, 0.275,
+            f"Page 1/{page_count}",
+            ha="center", va="bottom",
+        )
+        previous_axis = fig.add_axes([0.38, 0.265, 0.10, 0.035])
+        next_axis = fig.add_axes([0.52, 0.265, 0.10, 0.035])
+        button_previous = Button(previous_axis, "Previous")
+        button_next = Button(next_axis, "Next")
+
+        def change_page(step):
+            page_index[0] = max(
+                0, min(page_count - 1, page_index[0] + step)
+            )
+            start = page_index[0] * per_page
+            page_label.set_text(f"Page {page_index[0] + 1}/{page_count}")
+            draw_grid_page(live_grid_scans[0][start:start + per_page])
+
+        button_previous.on_clicked(lambda _: change_page(-1))
+        button_next.on_clicked(lambda _: change_page(1))
 
     if not args.no_sliders and not args.no_show:
         fig.subplots_adjust(bottom=0.24)
@@ -411,31 +482,45 @@ def main():
             for ax in axes.flat:
                 ax.clear()
 
-            live_title_suffix = (
-                f" ({bin_deg:g}° bins, sides ±{side_deg:g}°, "
-                f"dip {drop_mm:g}mm, candle {candle_width_mm:g}mm "
-                f"±{width_tolerance:.0%}, smudge {edge_smudge_deg:g}°)"
-            )
-            for panel_index, ax in enumerate(axes.flat):
-                for scan_index, (name, result) in enumerate(live_scans):
-                    if len(live_scans) == 1:
-                        draw_scan(ax, result, args.offset, show_raw=show_raw)
-                    else:
-                        draw_scan(
-                            ax, result, args.offset,
-                            label=name, color=colors[scan_index % 10],
-                            show_raw=False,
-                        )
-                title = live_scans[0][0] if len(live_scans) == 1 else "Overlay"
-                title += live_title_suffix
-                if args.offset:
-                    title += f" [extra offset {args.offset:g} mm]"
-                if args.zoom and panel_index == 1:
-                    ax.set_xlim(-args.zoom, args.zoom)
-                    ax.set_ylim(-args.zoom, args.zoom)
-                    title = f"Zoom +/-{args.zoom:g} mm"
-                style_axes(ax, args.offset, title)
-                ax.legend(loc="upper right", fontsize=7)
+            if args.overlay or len(live_scans) == 1:
+                for panel_index, ax in enumerate(axes.flat):
+                    for scan_index, (name, result) in enumerate(live_scans):
+                        if len(live_scans) == 1:
+                            draw_scan(ax, result, args.offset, show_raw=show_raw)
+                        else:
+                            draw_scan(
+                                ax, result, args.offset,
+                                label=name, color=colors[scan_index % 10],
+                                show_raw=False,
+                            )
+                    title = live_scans[0][0] if len(live_scans) == 1 else "Overlay"
+                    if args.offset:
+                        title += f" [extra offset {args.offset:g} mm]"
+                    if args.zoom and panel_index == 1:
+                        ax.set_xlim(-args.zoom, args.zoom)
+                        ax.set_ylim(-args.zoom, args.zoom)
+                        title = f"Zoom +/-{args.zoom:g} mm"
+                    style_axes(ax, args.offset, title)
+                    ax.legend(loc="upper right", fontsize=7)
+            else:
+                live_grid_scans[0] = live_scans
+                live_result_by_name = dict(live_scans)
+                start = page_index[0] * per_page
+                page_scans = [
+                    (name, live_result_by_name[name])
+                    for name, _ in live_scans[start:start + per_page]
+                ]
+                for ax in axes.flat:
+                    ax.clear()
+                for ax, (name, result) in zip(axes.flat, page_scans):
+                    draw_scan(ax, result, args.offset, show_raw=show_raw)
+                    if args.zoom:
+                        ax.set_xlim(-args.zoom, args.zoom)
+                        ax.set_ylim(-args.zoom, args.zoom)
+                    style_axes(ax, args.offset, name)
+                    ax.legend(loc="upper right", fontsize=7)
+                for ax in list(axes.flat)[len(page_scans):]:
+                    ax.axis("off")
             fig.canvas.draw_idle()
 
         bin_slider.on_changed(update_plot)
