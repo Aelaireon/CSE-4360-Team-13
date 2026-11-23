@@ -316,6 +316,7 @@ DRIVE_ENABLED below: True = the robot drives straight while printing, False = it
 if __name__ == "__main__":
     # calibration settings 
     DRIVE_ENABLED = False        # True: drive forward while printing. False: sit still and print
+    EXTINGUISH_TEST = True
     # to stop early: press the brick's CENTER button (Ctrl+C is unreliable with the background threads)
     DRIVE_SPEED = 20            # duty cycle %
     PRINT_MS = 50               # time between printed lines. Short so thin grid lines don't slip between prints
@@ -324,8 +325,19 @@ if __name__ == "__main__":
     colorSensor = ColorSensor(Port.S1)
     ultrasonic = UltrasonicSensor(Port.S4)
     drivebase = DifferentialDrive(x=0, y=0, theta=0)
+    fan = Motor(Port.C)
     ev3 = EV3Brick()
 
+    goal = GoalFinding(ev3, drivebase, colorSensor, ultrasonic, bumper=None, fan=fan)
+    goal.running = True
+    try:
+        goal.extinguish()
+    finally:
+        goal.stop()
+        fan.dc(0)
+        drivebase.shutdown()
+
+    """
     darkest = 100
     brightest = 0
     try:
@@ -353,3 +365,4 @@ if __name__ == "__main__":
     finally:
         drivebase.shutdown() # stops the motors and ends the odometry thread so the program can exit
         print("darkest reflection:", darkest, " brightest reflection:", brightest)
+    """
