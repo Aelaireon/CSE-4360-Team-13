@@ -44,6 +44,7 @@ from pybricks.hubs import EV3Brick
 from pybricks.parameters import Button, Port
 from pybricks.tools import StopWatch, wait
 from low_level_control.differential_drive import DifferentialDrive, EXTINGUISH
+from prj2.mode import announceMode
 
 # detection (black pad on a white floor, using reflected light)
 BLACK_REFLECTION_MAX = 15   # reflection (0-100) at or below this = on the black pad
@@ -155,7 +156,8 @@ class GoalFinding:
         # wait for a fire, take ownership, run the sequence once
         while self.running:
             if self.detector.fireFound and not self.finished:
-                self.drivebase.setOwner(EXTINGUISH) # halts the wheels; exploring commands are ignored from here on
+                if not self.drivebase.setOwner(EXTINGUISH): # halts the wheels; exploring commands are ignored from here on
+                    return # False = the drivebase was already shut down: don't revive it
                 if self.run():
                     self.finished = True # ownership deliberately stays EXTINGUISH. Stays False if stop() aborted the sequence
                 return
@@ -165,7 +167,7 @@ class GoalFinding:
     def run(self):
         # 1. we own the drivebase (the wheels were halted by setOwner). initial cue
         self.halt()
-        self.ev3.speaker.beep(1000, 100)
+        announceMode(self.ev3, EXTINGUISH) # red light + beep
         wait(SETTLE_MS)
         self.halt() # again, harmless: setOwner() is locked inside the drivebase, so no stale exploring command can slip in
                     # (kept as a cheap safety net)
