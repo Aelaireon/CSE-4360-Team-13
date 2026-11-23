@@ -44,7 +44,7 @@ from pybricks.hubs import EV3Brick
 from pybricks.parameters import Button, Port
 from pybricks.tools import StopWatch, wait
 from low_level_control.differential_drive import DifferentialDrive, EXTINGUISH
-from prj2.mode import announceMode
+from mode import announceMode
 
 # detection (black pad on a white floor, using reflected light)
 BLACK_REFLECTION_MAX = 15   # reflection (0-100) at or below this = on the black pad

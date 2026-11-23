@@ -1,7 +1,7 @@
 #!/usr/bin/env pybricks-micropython
 
 """
-CSE 4360 - Project 2: Wander, wall following, and goal finding to extinguish a fire.
+CSE 4360 - Project 2: Wander, wall following, and goal finding to extinguish a fire
 
 THREADS
 1. odometry            (DifferentialDrive)   always running
@@ -34,15 +34,13 @@ from goal_finding import FireDetector, GoalFinding
 COLOR_PORT = Port.S1        
 BUMPER_PORT = Port.S2      
 ULTRASONIC_PORT = Port.S4   
-FAN_PORT = None             # e.g. Port.B once the fan motor is mounted. None = skip the fan
+FAN_PORT = Port.C            
 
 START_MODE = WANDER
 MONITOR_MS = 50
 
-
 def stopPressed(ev3):
     return Button.CENTER in ev3.buttons.pressed()
-
 
 def main():
     ev3 = EV3Brick()
@@ -88,7 +86,6 @@ def main():
         detector.stop()
         if fan is not None:
             fan.dc(0)
-
 
 if __name__ == "__main__":
     main()
