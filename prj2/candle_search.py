@@ -288,6 +288,7 @@ class CandleSearch:
         min_distance = None
         max_difference = 60 # difference between max and min distance
         max_scans = 3000
+        max_detection = 900 # mm, max distance to detect candle
         distance_buffer = CircularBuffer(capacity=max_scans)
         theta_buffer = CircularBuffer(capacity=max_scans)
         ultrasonic_distance_offset = 80 # mm
@@ -324,7 +325,7 @@ class CandleSearch:
             #     theta_buffer.append(theta)
             dist = self.ultrasonic.distance()
             theta = self.drivebase.getPose()[2]
-            if last_theta is None or theta != last_theta:
+            if dist < max_detection and (last_theta is None or theta != last_theta):
                 distance_buffer.append(dist + ultrasonic_distance_offset)
                 theta_buffer.append(theta)
                 last_theta = theta
