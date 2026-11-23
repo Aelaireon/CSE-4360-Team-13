@@ -13,7 +13,7 @@ SPEED = 60                      # duty speed %
 FRONT_OBSTACLE = 50             # front distance (mm) that counts as approaching a wall (only used by the disabled ultrasonic block in step())
 BACK_UP = 800                   # how long to back straight up after a bumper hit
 TURN = 800                      # how long (ms) to turn left (CCW) after backing up
-TIMEOUT_WALL = 30000            # time budget (ms) for one stretch of wall following
+TIMEOUT_WALL = 20000            # time budget (ms) for one stretch of wall following
 NO_CONTACT_MS = 8000            # no bump for this long (ms) -> hand back to wander (possibly circling)
 POLL_MS = 20
 

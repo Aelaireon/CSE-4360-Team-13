@@ -18,11 +18,11 @@ SPEED = 60                      # duty speed % while driving a leg
 TURN_SPEED = 25                 # duty % when turning in place
 TURN_TOLERANCE = math.radians(4)
 TURN_TIMEOUT = 6000             # safety timeout (ms)
-FAR_WALL = 600                  # >= this on first wall hit -> likely hit on sidewall -> turn ~90 deg left
 JITTER = 15                     # +/- random degrees around left turns
 BUMP_BACK_MS = 1000             # how long to back up after a bumper hit
 POLL_MS = 20
 DEBUG_PRINT = True
+STRAIGHT_TIMEOUT = 8000
 
 def wrapAngle(angle):
     return (angle + math.pi) % (2 * math.pi) - math.pi
@@ -134,7 +134,7 @@ class Wander:
             self.giveToWall()
             return False
 
-        deg = random.uniform(-180.0, 180.0) + random.uniform(-JITTER, JITTER)
+        deg = random.uniform(-90.0, 135.0) + random.uniform(-JITTER, JITTER)
         _, _, theta = self.drive.getPose()
         target = wrapAngle(theta + math.radians(deg))
         return self.turnTo(target, track_farthest=False) == "yes"
@@ -151,13 +151,8 @@ class Wander:
         _, _, theta = self.drive.getPose()
         if initial:
             chosen = wrapAngle(theta + random.uniform(-math.pi, math.pi))
-            status, best_theta, best_mm = self.turnTo(chosen, track_farthest=True)
-            if status != "yes":
+            if self.turnTo(chosen, track_farthest=False) != "yes":
                 return None
-            if best_mm >= FAR_WALL:
-                if self.turnTo(best_theta, track_farthest=False) != "yes":
-                    return None
-                return best_theta
             return chosen
 
         delta = random.uniform(-math.radians(120), math.radians(120))
@@ -167,7 +162,8 @@ class Wander:
         return target
 
     def driveLeg(self):
-        while self.checkActive():
+        timer = StopWatch()
+        while timer.time() < STRAIGHT_TIMEOUT and self.checkActive():
             self.runMotors(SPEED, SPEED)
             wait(10)
 
