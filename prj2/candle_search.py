@@ -92,7 +92,7 @@ class CandleSearch:
 
     def _findCandleByDip(self, distances, angles, bin_deg=1.0, side_deg=31.0,
                      drop_mm=150, candle_width_mm=60.0, width_tolerance=0.50,
-                     no_return=2500):
+                     edge_smudge_deg=7.0, no_return=2500):
         bin_count = int(360 / bin_deg)
         range_bins = [no_return] * bin_count
         for distance, angle in zip(distances, angles):
@@ -138,8 +138,13 @@ class CandleSearch:
             expected_width_deg = math.degrees(
                 2 * math.atan((candle_width_mm / 2) / median_run_range)
             )
-            minimum_width_deg = expected_width_deg * (1 - width_tolerance)
-            maximum_width_deg = expected_width_deg * (1 + width_tolerance)
+            minimum_width_deg = max(
+                1.0,
+                expected_width_deg * (1 - width_tolerance) - edge_smudge_deg
+            )
+            maximum_width_deg = (
+                expected_width_deg * (1 + width_tolerance) + edge_smudge_deg
+            )
             if not (minimum_width_deg <= run_width_deg <= maximum_width_deg):
                 continue
 
@@ -241,6 +246,7 @@ class CandleSearch:
                 drop_mm=150,
                 candle_width_mm=60.0,
                 width_tolerance=0.50,
+                edge_smudge_deg=7.0,
                 no_return=2500 + ultrasonic_distance_offset
             )
             

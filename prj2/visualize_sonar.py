@@ -77,6 +77,7 @@ def find_candle(
     drop_mm=100.0,
     candle_width_mm=60.0,
     width_tolerance=0.50,
+    edge_smudge_deg=7.0,
     no_return=NO_RETURN_DEFAULT,
 ):
     """
@@ -136,8 +137,13 @@ def find_candle(
             expected_width_deg = math.degrees(
                 2 * math.atan((candle_width_mm / 2) / median_run_range)
             )
-            minimum_width_deg = expected_width_deg * (1 - width_tolerance)
-            maximum_width_deg = expected_width_deg * (1 + width_tolerance)
+            minimum_width_deg = max(
+                1.0,
+                expected_width_deg * (1 - width_tolerance) - edge_smudge_deg
+            )
+            maximum_width_deg = (
+                expected_width_deg * (1 + width_tolerance) + edge_smudge_deg
+            )
             if not (minimum_width_deg <= run_width_deg <= maximum_width_deg):
                 continue
 
@@ -262,14 +268,17 @@ def main():
                    help=f"readings >= this are discarded (default {NO_RETURN_DEFAULT} = 2500 + offset)")
     p.add_argument("--bin", type=float, default=1.0,
                    help="angular bin width in degrees (default 1)")
-    p.add_argument("--side", type=float, default=31.0,
+    p.add_argument("--side", type=float, default=23.0,
                    help="distance from each side sample in degrees (default 31)")
     p.add_argument("--drop", type=float, default=150.0,
                    dest="dip_drop", help="required dip depth below both sides in mm (default 150)")
     p.add_argument("--candle-width", type=float, default=60.0,
                    help="expected candle width in mm (default 60)")
-    p.add_argument("--width-tolerance", type=float, default=0.50,
+    p.add_argument("--width-tolerance", type=float, default=0.3,
                    help="allowed width error from 0 to 1, as a fraction (default 0.50)")
+    # p.add_argument("--edge-smudge", type=float, default=7.0,
+    p.add_argument("--edge-smudge", type=float, default=10.0,
+                   help="additional ultrasonic edge/spread allowance in degrees (default 7)")
     p.add_argument("--zoom", type=float, default=None,
                    help="add a near-field panel showing +/- this many mm")
     p.add_argument("--remove-range", type=float, nargs=2, metavar=("MIN", "MAX"), default=None,
@@ -303,6 +312,7 @@ def main():
             bin_deg=args.bin, side_deg=args.side, drop_mm=args.dip_drop,
             candle_width_mm=args.candle_width,
             width_tolerance=args.width_tolerance,
+            edge_smudge_deg=args.edge_smudge,
             no_return=args.no_return,
         )
         summarize(Path(f).name, d, res)
@@ -358,6 +368,7 @@ def main():
         slider_candle_width = fig.add_axes([0.54, 0.11, 0.36, 0.025])
         slider_width_tolerance = fig.add_axes([0.32, 0.06, 0.36, 0.025])
         slider_no_return = fig.add_axes([0.10, 0.21, 0.36, 0.025])
+        slider_edge_smudge = fig.add_axes([0.32, 0.01, 0.36, 0.025])
 
         bin_slider = Slider(slider_bin, "Bin (deg)", 0.5, 5,
                             valinit=args.bin, valstep=0.5)
@@ -370,6 +381,9 @@ def main():
         width_tolerance_slider = Slider(slider_width_tolerance, "Width tolerance",
                                         0.10, 1.00,
                                         valinit=args.width_tolerance, valstep=0.05)
+        edge_smudge_slider = Slider(slider_edge_smudge, "Edge smudge (deg)",
+                                    0, 20,
+                                    valinit=args.edge_smudge, valstep=1)
         no_return_slider = Slider(slider_no_return, "No-return (mm)", 500, 4000,
                                   valinit=args.no_return, valstep=50)
 
@@ -379,6 +393,7 @@ def main():
             drop_mm = drop_slider.val
             candle_width_mm = candle_width_slider.val
             width_tolerance = width_tolerance_slider.val
+            edge_smudge_deg = edge_smudge_slider.val
             no_return = no_return_slider.val
 
             live_scans = []
@@ -388,6 +403,7 @@ def main():
                     bin_deg=bin_deg, side_deg=side_deg, drop_mm=drop_mm,
                     candle_width_mm=candle_width_mm,
                     width_tolerance=width_tolerance,
+                    edge_smudge_deg=edge_smudge_deg,
                     no_return=no_return,
                 )
                 live_scans.append((name, result))
@@ -398,7 +414,7 @@ def main():
             live_title_suffix = (
                 f" ({bin_deg:g}° bins, sides ±{side_deg:g}°, "
                 f"dip {drop_mm:g}mm, candle {candle_width_mm:g}mm "
-                f"±{width_tolerance:.0%})"
+                f"±{width_tolerance:.0%}, smudge {edge_smudge_deg:g}°)"
             )
             for panel_index, ax in enumerate(axes.flat):
                 for scan_index, (name, result) in enumerate(live_scans):
@@ -427,6 +443,7 @@ def main():
         drop_slider.on_changed(update_plot)
         candle_width_slider.on_changed(update_plot)
         width_tolerance_slider.on_changed(update_plot)
+        edge_smudge_slider.on_changed(update_plot)
         no_return_slider.on_changed(update_plot)
     else:
         fig.tight_layout()
