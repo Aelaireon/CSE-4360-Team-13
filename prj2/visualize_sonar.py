@@ -9,7 +9,7 @@ Reads a .txt file containing pasted serial output of the form:
 
 Distances are in mm, angles in radians. The logged distances ALREADY include the
 robot's +80 mm ultrasonic offset (it is added before buffering), so --offset
-defaults to 0 and no_return defaults to 2500 + 80, exactly like the robot code.
+defaults to 0 and no_return defaults to 720 + 80, exactly like the robot code.
 
 Uses the same circular 1-degree binning and dip detection as
 CandleSearch._findCandleByDip (candle_search.py):
@@ -37,7 +37,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
 
 SENSOR_OFFSET_MM = 80                        # robot's ultrasonic_distance_offset
-NO_RETURN_DEFAULT = 730 + SENSOR_OFFSET_MM  # robot passes no_return=2500 + offset
+NO_RETURN_DEFAULT = 720 + SENSOR_OFFSET_MM  # robot passes no_return=720 + offset
 
 
 # --------------------------------------------------------------------------- #
@@ -281,7 +281,7 @@ def main():
                    help="EXTRA radial offset in mm for plotting (logged data already includes "
                         f"the robot's +{SENSOR_OFFSET_MM} mm; default 0)")
     p.add_argument("--no-return", type=float, default=NO_RETURN_DEFAULT,
-                   help=f"readings >= this are discarded (default {NO_RETURN_DEFAULT} = 2500 + offset)")
+                   help=f"readings >= this are discarded (default {NO_RETURN_DEFAULT} = 720 + offset)")
     p.add_argument("--bin", type=float, default=1.0,
                    help="angular bin width in degrees (default 1)")
     p.add_argument("--side", type=float, default=20.0,

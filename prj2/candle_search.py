@@ -90,9 +90,9 @@ class CandleSearch:
         return math.radians(-distance / 25 + 25)
 
 
-    def _findCandleByDip(self, distances, angles, bin_deg=1.0, side_deg=31.0,
-                     drop_mm=150, candle_width_mm=60.0, width_tolerance=0.50,
-                     edge_smudge_deg=7.0, no_return=2500):
+    def _findCandleByDip(self, distances, angles, bin_deg=1.0, side_deg=20.0,
+                     drop_mm=150, candle_width_mm=60.0, width_tolerance=0.30,
+                     edge_smudge_deg=5.0, no_return=720):
         bin_count = int(360 / bin_deg)
         range_bins = [no_return] * bin_count
         for distance, angle in zip(distances, angles):
@@ -187,7 +187,7 @@ class CandleSearch:
         max_difference = 60 # difference between max and min distance
         max_scans = 3000
         angle_to_scan = 360 # degrees, how much to scan before processing the buffer
-        max_detection = 700 # mm, max distance to detect candle
+        max_detection = 720 # mm, max distance to detect candle
         distance_buffer = CircularBuffer(capacity=max_scans)
         theta_buffer = CircularBuffer(capacity=max_scans)
         ultrasonic_distance_offset = 80 # mm
@@ -242,12 +242,12 @@ class CandleSearch:
                 raw_dist,
                 raw_theta,
                 bin_deg=1.0,
-                side_deg=31.0,
+                side_deg=20.0,
                 drop_mm=150,
                 candle_width_mm=60.0,
-                width_tolerance=0.50,
-                edge_smudge_deg=7.0,
-                no_return=2500 + ultrasonic_distance_offset
+                width_tolerance=0.30,
+                edge_smudge_deg=5.0,
+                no_return=max_detection + ultrasonic_distance_offset
             )
             
             print("Target theta:", target_theta, "Target distance:", target_dist)
