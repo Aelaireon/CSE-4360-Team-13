@@ -90,52 +90,56 @@ class CandleSearch:
         return math.radians(-distance / 25 + 25)
 
 
-    def _findCandleByDip(self, dists, thetas, bin_deg=1.0, side_deg=30,
+    def _findCandleByDip(self, distances, angles, bin_deg=1.0, side_deg=30,
                      drop_mm=100, min_w_deg=4, max_w_deg=50, no_return=2500):
-        n = int(360 / bin_deg)
-        r = [no_return] * n
-        for d, t in zip(dists, thetas):
-            if d is None or d <= 0 or d >= no_return:
+        bin_count = int(360 / bin_deg)
+        range_bins = [no_return] * bin_count
+        for distance, angle in zip(distances, angles):
+            if distance is None or distance <= 0 or distance >= no_return:
                 continue
-            b = int((t % (2 * math.pi)) / (2 * math.pi) * n) % n
-            r[b] = min(r[b], d)
+            bin_index = int((angle % (2 * math.pi)) / (2 * math.pi) * bin_count) % bin_count
+            range_bins[bin_index] = min(range_bins[bin_index], distance)
 
-        def med(idx):
-            v = sorted(r[i % n] for i in idx)
-            return v[len(v) // 2]
+        def median_range(bin_indices):
+            range_values = sorted(range_bins[i % bin_count] for i in bin_indices)
+            return range_values[len(range_values) // 2]
 
-        S = int(side_deg / bin_deg)
-        dip = []
-        for i in range(n):
-            left = med(range(i - S - 5, i - S))
-            right = med(range(i + S, i + S + 5))
-            bg = min(left, right)                 # must be in front of BOTH sides
-            dip.append(r[i] < no_return and r[i] < bg - drop_mm)
+        side_bins = int(side_deg / bin_deg)
+        dip_bins = []
+        for bin_index in range(bin_count):
+            left_range = median_range(range(bin_index - side_bins - 5, bin_index - side_bins))
+            right_range = median_range(range(bin_index + side_bins, bin_index + side_bins + 5))
+            background_range = min(left_range, right_range)
+            dip_bins.append(
+                range_bins[bin_index] < no_return
+                and range_bins[bin_index] < background_range - drop_mm
+            )
 
         # group circular runs of dip bins
-        start = next((i for i in range(n) if not dip[i]), None)
-        if start is None:
+        first_valid_bin = next((i for i in range(bin_count) if not dip_bins[i]), None)
+        if first_valid_bin is None:
             return None, None
-        runs, cur = [], []
-        for k in range(1, n + 1):
-            i = (start + k) % n
-            if dip[i]:
-                cur.append(i)
-            elif cur:
-                runs.append(cur); cur = []
-        best = None
-        for run in runs:
-            w = len(run) * bin_deg
-            if not (min_w_deg <= w <= max_w_deg):
+        runs, current_run = [], []
+        for offset in range(1, bin_count + 1):
+            bin_index = (first_valid_bin + offset) % bin_count
+            if dip_bins[bin_index]:
+                current_run.append(bin_index)
+            elif current_run:
+                runs.append(current_run)
+                current_run = []
+        best_run = None
+        for run_bins in runs:
+            run_width_deg = len(run_bins) * bin_deg
+            if not (min_w_deg <= run_width_deg <= max_w_deg):
                 continue
-            rng = sorted(r[i] for i in run)[len(run) // 2]
-            if best is None or rng < best[1]:
-                best = (run, rng)
-        if best is None:
+            median_run_range = sorted(range_bins[i] for i in run_bins)[len(run_bins) // 2]
+            if best_run is None or median_run_range < best_run[1]:
+                best_run = (run_bins, median_run_range)
+        if best_run is None:
             return None, None
-        run, rng = best
-        mid = run[len(run) // 2]
-        return (mid + 0.5) * bin_deg * math.pi / 180.0, rng
+        run_bins, median_run_range = best_run
+        middle_bin = run_bins[len(run_bins) // 2]
+        return (middle_bin + 0.5) * bin_deg * math.pi / 180.0, median_run_range
 
     def turnToSmallestSegment(self, target_theta, turn_speed=15, tol_deg=2.0):
         if target_theta is None:
@@ -152,9 +156,9 @@ class CandleSearch:
             else:
                 self.drivebase.runMotors(turn_speed, -turn_speed)
 
-        self.drivebase.stop()
+        self.drivebase.halt()
         print("Aligned! Target:", round(math.degrees(target_theta), 1),
-              "Pose:", round(math.degrees(self.drivebase.getPose()[2]), 1))
+              "Current:", round(math.degrees(self.drivebase.getPose()[2]), 1))
         return True
         
     def run(self):
@@ -167,6 +171,7 @@ class CandleSearch:
         min_distance = None
         max_difference = 60 # difference between max and min distance
         max_scans = 3000
+        angle_to_scan = 360 # degrees, how much to scan before processing the buffer
         max_detection = 700 # mm, max distance to detect candle
         distance_buffer = CircularBuffer(capacity=max_scans)
         theta_buffer = CircularBuffer(capacity=max_scans)
@@ -190,7 +195,7 @@ class CandleSearch:
                 self.drivebase.runMotors(lspeed, rspeed)
             else:
                 self.ev3.speaker.beep()
-                self.drivebase.stop()
+                self.drivebase.halt()
                 print("Candle found! Stopping search.")
                 print("Initial theta: ", math.degrees(initial_theta), " Final theta: ", math.degrees(final_theta), " Max distance: ", max_distance, " Min distance: ", min_distance)
                 print("Difference between max and min distance: ", max_distance - min_distance)
@@ -206,30 +211,16 @@ class CandleSearch:
 
             if initial_scan_theta is None:
                 initial_scan_theta = theta
-            if abs(theta - initial_scan_theta) < math.radians(360) and not distance_buffer.is_full():
+            if abs(theta - initial_scan_theta) < math.radians(angle_to_scan) and not distance_buffer.is_full():
                 continue # Wait until a full revolution (or full buffer) to start processing
             initial_scan_theta = None # Reset initial scan theta for next buffer
             self.drivebase.halt() # Stop the robot to process the buffer
-            self.drivebase.halt()
             self.drivebase.halt()
             self.drivebase.halt()
             print("Processing scans ...")
             
             raw_dist = distance_buffer.get_all()
             raw_theta = theta_buffer.get_all()
-            
-            # print("Finding smallest segment target ...")
-            # target_theta, target_dist = self._findSmallestSegmentTarget(
-            #     raw_dist,
-            #     raw_theta,
-            #     beam_deg=40.0,
-            #     tol_mm=27.0,
-            #     gap_mm=70.0,
-            #     min_samples=12,
-            #     no_return=2500 + ultrasonic_distance_offset,
-            #     # Optional: reject wall fragments / huge walls by physical width, e.g.
-            #     # min_width_mm=30.0, max_width_mm=250.0   (tune on real scans)
-            # )
             
             print("Finding candle by dip ...")
             target_theta, target_dist = self._findCandleByDip(
@@ -256,12 +247,14 @@ class CandleSearch:
                 initial_scan_theta = None
 
         
-        print("Aligned! Current theta:", round(math.degrees(self.drivebase.getPose()[2]), 1))
-        print("Cleaning scans ...")
+        print("Printing scans ...")
         print("===============================================")
         print("Distance buffer:", distance_buffer.get_all())
         print("Theta buffer:", theta_buffer.get_all())
         print("===============================================")
+        self.ev3.speaker.beep()
+        self.drivebase.halt()
+        self.drivebase.halt()
         self.drivebase.halt()
 
 def main():
