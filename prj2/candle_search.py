@@ -89,174 +89,53 @@ class CandleSearch:
         # At 600 gives 15
         return math.radians(-distance / 25 + 25)
 
-    def _findSmallestSegmentTarget(
-        self,
-        distance_buffer,
-        theta_buffer,
-        beam_deg=40.0,
-        tol_mm=27.0,
-        gap_mm=70.0,
-        min_samples=12,
-        no_return=2500,
-        k_spread=3.0,
-        ref_range_mm=500.0,
-        min_samples_floor=3,
-        min_width_mm=0.0,      # ignore segments narrower than this (0 = off)
-        max_width_mm=1.0e9,    # ignore segments wider than this (huge = off)
-    ):
-        # 1. Single-pass consecutive-theta dedupe
-        unique_t = []
-        unique_d = []
-        last_t = None
-        for d, t in zip(distance_buffer, theta_buffer):
-            if d is None or t is None or d < 0 or d >= no_return:
+
+    def _findCandleByDip(self, dists, thetas, bin_deg=1.0, side_deg=30,
+                     drop_mm=100, min_w_deg=4, max_w_deg=50, no_return=2500):
+        n = int(360 / bin_deg)
+        r = [no_return] * n
+        for d, t in zip(dists, thetas):
+            if d is None or d <= 0 or d >= no_return:
                 continue
-            if t != last_t:
-                unique_t.append(t)
-                unique_d.append(d)
-                last_t = t
- 
-        n = len(unique_t)
-        if n == 0:
-            return None, None
- 
-        if n > 1:
-            diffs = [
-                abs(unique_t[i] - unique_t[i - 1])
-                for i in range(1, n)
-                if unique_t[i] != unique_t[i - 1]
-            ]
-            d_theta = sorted(diffs)[len(diffs) // 2] if diffs else math.radians(1.0)
-        else:
-            d_theta = math.radians(1.0)
- 
-        # 2. Wide-beam minimum erosion, O(N) monotonic queue. Output stays in scan order.
-        half_rad = math.radians(beam_deg) * 0.5
-        px = []  # x, y, range, theta of surviving points, in angular order
-        py = []
-        pr = []
-        pt = []
-        q = []
-        head = 0
-        hi = 0
+            b = int((t % (2 * math.pi)) / (2 * math.pi) * n) % n
+            r[b] = min(r[b], d)
+
+        def med(idx):
+            v = sorted(r[i % n] for i in idx)
+            return v[len(v) // 2]
+
+        S = int(side_deg / bin_deg)
+        dip = []
         for i in range(n):
-            t_center = unique_t[i]
-            upper = t_center + half_rad
-            lower = t_center - half_rad
- 
-            while hi < n and unique_t[hi] <= upper:
-                d_hi = unique_d[hi]
-                while len(q) > head and unique_d[q[-1]] >= d_hi:
-                    q.pop()
-                q.append(hi)
-                hi += 1
- 
-            while head < len(q) and unique_t[q[head]] < lower:
-                head += 1
- 
-            d_i = unique_d[i]
-            local_min = unique_d[q[head]] if head < len(q) else d_i
-            if d_i <= local_min + tol_mm:
-                px.append(d_i * math.cos(t_center))
-                py.append(d_i * math.sin(t_center))
-                pr.append(d_i)
-                pt.append(t_center)
- 
-        m = len(px)
-        if m == 0:
+            left = med(range(i - S - 5, i - S))
+            right = med(range(i + S, i + S + 5))
+            bg = min(left, right)                 # must be in front of BOTH sides
+            dip.append(r[i] < no_return and r[i] < bg - drop_mm)
+
+        # group circular runs of dip bins
+        start = next((i for i in range(n) if not dip[i]), None)
+        if start is None:
             return None, None
- 
-        # 3. Sequential breakpoint segmentation, O(M).
-        #    A new segment starts whenever the jump between two consecutive points
-        #    exceeds a range-adaptive threshold (same form as the old eps).
-        seg_n = []    # point count
-        seg_sx = []   # sum of x
-        seg_sy = []   # sum of y
-        seg_f = []    # index of first point
-        seg_l = []    # index of last point
-        seg_n_cur = 1
-        sx = px[0]
-        sy = py[0]
-        first = 0
-        for i in range(1, m):
-            r = pr[i] if pr[i] > pr[i - 1] else pr[i - 1]
-            thr = k_spread * r * d_theta
-            if thr < gap_mm:
-                thr = gap_mm
-            dx = px[i] - px[i - 1]
-            dy = py[i] - py[i - 1]
-            if dx * dx + dy * dy <= thr * thr:
-                seg_n_cur += 1
-                sx += px[i]
-                sy += py[i]
-            else:
-                seg_n.append(seg_n_cur)
-                seg_sx.append(sx)
-                seg_sy.append(sy)
-                seg_f.append(first)
-                seg_l.append(i - 1)
-                seg_n_cur = 1
-                sx = px[i]
-                sy = py[i]
-                first = i
-        seg_n.append(seg_n_cur)
-        seg_sx.append(sx)
-        seg_sy.append(sy)
-        seg_f.append(first)
-        seg_l.append(m - 1)
- 
-        # Wrap-around: an object straddling theta = 0 / 2*pi is split between the
-        # last and first segments. Join them if the end points really are neighbours.
-        if len(seg_n) > 1:
-            wrap_gap = pt[0] + 2.0 * math.pi - pt[m - 1]
-            r = pr[0] if pr[0] > pr[m - 1] else pr[m - 1]
-            thr = k_spread * r * d_theta
-            if thr < gap_mm:
-                thr = gap_mm
-            dx = px[0] - px[m - 1]
-            dy = py[0] - py[m - 1]
-            if wrap_gap <= 10.0 * d_theta and dx * dx + dy * dy <= thr * thr:
-                last_n = seg_n.pop()
-                last_sx = seg_sx.pop()
-                last_sy = seg_sy.pop()
-                last_f = seg_f.pop()
-                seg_l.pop()
-                seg_n[0] = seg_n[0] + last_n
-                seg_sx[0] = seg_sx[0] + last_sx
-                seg_sy[0] = seg_sy[0] + last_sy
-                seg_f[0] = last_f   # merged segment runs last_f ... (wrap) ... seg_l[0]
- 
-        # 4. Smallest valid segment -> centroid. A segment is valid if it has enough
-        #    points (min_samples at ref range, fewer when farther away, never below floor)
-        #    and, if enabled, a plausible physical width (chord between its end points).
-        best_n = 0
-        best_cx = 0.0
-        best_cy = 0.0
-        found = False
-        for s in range(len(seg_n)):
-            cnt = seg_n[s]
-            cx = seg_sx[s] / cnt
-            cy = seg_sy[s] / cnt
-            rc = math.sqrt(cx * cx + cy * cy)
-            need = int(round(min_samples * (ref_range_mm / max(ref_range_mm, rc))))
-            if need < min_samples_floor:
-                need = min_samples_floor
-            if cnt < need:
+        runs, cur = [], []
+        for k in range(1, n + 1):
+            i = (start + k) % n
+            if dip[i]:
+                cur.append(i)
+            elif cur:
+                runs.append(cur); cur = []
+        best = None
+        for run in runs:
+            w = len(run) * bin_deg
+            if not (min_w_deg <= w <= max_w_deg):
                 continue
-            wx = px[seg_l[s]] - px[seg_f[s]]
-            wy = py[seg_l[s]] - py[seg_f[s]]
-            width = math.sqrt(wx * wx + wy * wy)
-            if width < min_width_mm or width > max_width_mm:
-                continue
-            if (not found) or cnt < best_n:
-                found = True
-                best_n = cnt
-                best_cx = cx
-                best_cy = cy
- 
-        if not found:
+            rng = sorted(r[i] for i in run)[len(run) // 2]
+            if best is None or rng < best[1]:
+                best = (run, rng)
+        if best is None:
             return None, None
-        return math.atan2(best_cy, best_cx), math.sqrt(best_cx * best_cx + best_cy * best_cy)
+        run, rng = best
+        mid = run[len(run) // 2]
+        return (mid + 0.5) * bin_deg * math.pi / 180.0, rng
 
     def turnToSmallestSegment(self, target_theta, turn_speed=15, tol_deg=2.0):
         if target_theta is None:
@@ -288,7 +167,7 @@ class CandleSearch:
         min_distance = None
         max_difference = 60 # difference between max and min distance
         max_scans = 3000
-        max_detection = 900 # mm, max distance to detect candle
+        max_detection = 700 # mm, max distance to detect candle
         distance_buffer = CircularBuffer(capacity=max_scans)
         theta_buffer = CircularBuffer(capacity=max_scans)
         ultrasonic_distance_offset = 80 # mm
@@ -317,12 +196,7 @@ class CandleSearch:
                 print("Difference between max and min distance: ", max_distance - min_distance)
                 print("Theta difference between initial and final theta: ", math.degrees(final_theta) - math.degrees(initial_theta))
                 break
-
-            # dist = self.ultrasonic.distance()
-            # theta = self.drivebase.getPose()[2]  # radians
-            # if dist < 300*3: # 300 mm * 3 = 900 mm
-            #     distance_buffer.append(dist + ultrasonic_distance_offset) # milimeters
-            #     theta_buffer.append(theta)
+            
             dist = self.ultrasonic.distance()
             theta = self.drivebase.getPose()[2]
             if dist < max_detection and (last_theta is None or theta != last_theta):
@@ -344,17 +218,29 @@ class CandleSearch:
             raw_dist = distance_buffer.get_all()
             raw_theta = theta_buffer.get_all()
             
-            print("Finding smallest segment target ...")
-            target_theta, target_dist = self._findSmallestSegmentTarget(
+            # print("Finding smallest segment target ...")
+            # target_theta, target_dist = self._findSmallestSegmentTarget(
+            #     raw_dist,
+            #     raw_theta,
+            #     beam_deg=40.0,
+            #     tol_mm=27.0,
+            #     gap_mm=70.0,
+            #     min_samples=12,
+            #     no_return=2500 + ultrasonic_distance_offset,
+            #     # Optional: reject wall fragments / huge walls by physical width, e.g.
+            #     # min_width_mm=30.0, max_width_mm=250.0   (tune on real scans)
+            # )
+            
+            print("Finding candle by dip ...")
+            target_theta, target_dist = self._findCandleByDip(
                 raw_dist,
                 raw_theta,
-                beam_deg=40.0,
-                tol_mm=27.0,
-                gap_mm=70.0,
-                min_samples=12,
-                no_return=2500 + ultrasonic_distance_offset,
-                # Optional: reject wall fragments / huge walls by physical width, e.g.
-                # min_width_mm=30.0, max_width_mm=250.0   (tune on real scans)
+                bin_deg=1.0,
+                side_deg=30,
+                drop_mm=100,
+                min_w_deg=4,
+                max_w_deg=50,
+                no_return=2500 + ultrasonic_distance_offset
             )
             
             print("Target theta:", target_theta, "Target distance:", target_dist)
