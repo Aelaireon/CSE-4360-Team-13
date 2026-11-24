@@ -1,7 +1,7 @@
 #!/usr/bin/env pybricks-micropython
 """
-wander.py - explore open floor, use ultrasonic on wall hits and initial turn,
-            and hand off to wall following after two wall hits / timeouts.
+wander.py - explore open floor with random headings, use ultrasonic on wall hits,
+            and hand off to wall following after two wall hits or total timeout.
 """
 import math
 import random
@@ -17,9 +17,9 @@ from pybricks.tools import StopWatch, wait
 SPEED = 60                      # duty speed % while driving a leg
 TURN_SPEED = 25                 # duty % when turning in place
 TURN_TOLERANCE = math.radians(4)
-TURN_TIMEOUT = 6000             # safety timeout (ms)
-FAR_WALL = 600                  # >= this on first wall hit -> likely hit on sidewall -> turn ~90 deg left
-JITTER = 15                     # +/- random degrees around left turns
+TURN_TIMEOUT = 6000             # safety timeout (ms) for a single turn
+WANDER_TIMEOUT = 20000          # max time (ms) in WANDER before handing off to WALL
+JITTER = 15                     # +/- random degrees around turns
 BUMP_BACK_MS = 1000             # how long to back up after a bumper hit
 POLL_MS = 20
 DEBUG_PRINT = True
@@ -28,21 +28,24 @@ def wrapAngle(angle):
     return (angle + math.pi) % (2 * math.pi) - math.pi
 
 class Wander:
-    def __init__(self, ev3, drivebase, ultrasonic, bumper):
+    def __init__(self, ev3, drivebase, ultrasonic, bumper, wander_timeout=WANDER_TIMEOUT):
         self.ev3 = ev3
         self.drive = drivebase
         self.ultrasonic = ultrasonic
         self.bumper = bumper
+        self.wander_timeout = wander_timeout
 
         self.running = False
         self.thread = None
         self.wall_hits = 0
         self.picked_initial_dir = False
+        self.wander_timer = StopWatch()
 
     def start(self):
         random.seed(42)
         self.wall_hits = 0
         self.picked_initial_dir = False
+        self.wander_timer.reset()
         self.running = True
         self.thread = threading.Thread(target=self.loop)
         self.thread.start()
@@ -69,6 +72,7 @@ class Wander:
         return self.ultrasonic.distance()
 
     def giveToWall(self):
+        self.wall_hits = 0
         self.drive.handoff(WANDER, WALL)
 
     def backUp(self):
@@ -82,26 +86,20 @@ class Wander:
         self.halt()
         return True
 
-    def turnTo(self, target, track_farthest=False):
+    def turnTo(self, target):
         timer = StopWatch()
-        _, _, best_theta = self.drive.getPose()
-        best_mm = self.readMm() if track_farthest else -1
         reached = False
 
         while timer.time() < TURN_TIMEOUT:
             if not self.owns() or self.bumped():
                 self.halt()
-                status = "abort"
-                if (track_farthest): return (status, best_theta, best_mm)  
-                return status
+                return False
+            if self.wander_timer.time() >= self.wander_timeout:
+                self.halt()
+                self.giveToWall()
+                return False
 
             _, _, theta = self.drive.getPose()
-            if track_farthest:
-                mm = self.readMm()
-                if mm > best_mm:
-                    best_mm = mm
-                    best_theta = theta
-
             error = wrapAngle(target - theta)
             if abs(error) < TURN_TOLERANCE:
                 reached = True
@@ -113,22 +111,20 @@ class Wander:
 
         self.halt()
         if reached:
-            status = "yes"
-        else:
-            status = "timeout"
-            self.wall_hits += 1
-            if self.wall_hits >= 2:
-                self.giveToWall()
+            return True
 
-        if track_farthest:
-            return status, best_theta, best_mm
-        return status
+        self.wall_hits += 1
+        if self.wall_hits >= 2:
+            self.giveToWall()
+        return False
 
     def handleWallHit(self):
         if not self.backUp():
             return False
 
         mm = self.readMm()
+        if DEBUG_PRINT:
+            print("wander: wall hit, mm:", mm)
         self.wall_hits += 1
         if self.wall_hits >= 2:
             self.giveToWall()
@@ -137,11 +133,15 @@ class Wander:
         deg = random.uniform(-180.0, 180.0) + random.uniform(-JITTER, JITTER)
         _, _, theta = self.drive.getPose()
         target = wrapAngle(theta + math.radians(deg))
-        return self.turnTo(target, track_farthest=False) == "yes"
+        return self.turnTo(target)
 
     def checkActive(self):
         if not self.owns():
             self.halt()
+            return False
+        if self.wander_timer.time() >= self.wander_timeout:
+            self.halt()
+            self.giveToWall()
             return False
         if self.bumped():
             return self.handleWallHit()
@@ -150,19 +150,12 @@ class Wander:
     def pickHeading(self, initial=False):
         _, _, theta = self.drive.getPose()
         if initial:
-            chosen = wrapAngle(theta + random.uniform(-math.pi, math.pi))
-            status, best_theta, best_mm = self.turnTo(chosen, track_farthest=True)
-            if status != "yes":
-                return None
-            if best_mm >= FAR_WALL:
-                if self.turnTo(best_theta, track_farthest=False) != "yes":
-                    return None
-                return best_theta
-            return chosen
+            target = wrapAngle(theta + random.uniform(-math.pi, math.pi))
+        else:
+            delta = random.uniform(-math.radians(120), math.radians(120))
+            target = wrapAngle(theta + delta)
 
-        delta = random.uniform(-math.radians(120), math.radians(120))
-        target = wrapAngle(theta + delta)
-        if self.turnTo(target, track_farthest=False) != "yes":
+        if not self.turnTo(target):
             return None
         return target
 
@@ -200,6 +193,7 @@ class Wander:
                 had_ownership = True
                 self.wall_hits = 0
                 self.picked_initial_dir = False
+                self.wander_timer.reset()
                 announceMode(self.ev3, WANDER)
 
             self.step()
